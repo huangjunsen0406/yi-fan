@@ -40,6 +40,20 @@ export const useTranslateStore = defineStore('translate', () => {
   // ── Window always on top ──
   const alwaysOnTop = ref(false)
 
+
+  // ── Code format labels ──
+  const codeFormatLabels: Record<string, string> = {
+    camelCase: '小驼峰 camelCase',
+    PascalCase: '大驼峰 PascalCase',
+    snake_case: '下划线 snake_case',
+    'kebab-case': '短横线 kebab-case',
+    'KEBAB-CASE': '大写短横线 KEBAB-CASE',
+    CONSTANT_CASE: '常量 CONSTANT_CASE',
+    words: '空格分词 words',
+  }
+
+  const codeFormats = Object.keys(codeFormatLabels)
+
   // 从 settings 加载用户设置的默认语言
   async function initDefaults() {
     const settings = useSettingsStore()
@@ -348,6 +362,21 @@ export const useTranslateStore = defineStore('translate', () => {
     await settings.save()
   }
 
+  // ── Cycle code naming format (Alt+Shift+U) ──
+  async function cycleCodeFormat() {
+    if (!outputText.value.trim()) return
+
+    // Cycle to next format
+    const idx = codeFormats.indexOf(activeFormat.value)
+    activeFormat.value = codeFormats[(idx + 1) % codeFormats.length]
+
+    // Format the current output text and copy to clipboard
+    const formatted = toNamingFormat(outputText.value, activeFormat.value)
+    await copyToClipboard(formatted)
+    console.log(`[code-format] ${activeFormat.value}: ${formatted}`)
+  }
+
+
   // ── Toggle always on top ──
   async function toggleAlwaysOnTop() {
     const { getCurrentWindow } = await import('@tauri-apps/api/window')
@@ -385,5 +414,7 @@ export const useTranslateStore = defineStore('translate', () => {
     deleteNewlines,
     toggleDynamicTranslate,
     toggleAlwaysOnTop,
+    codeFormatLabels,
+    cycleCodeFormat,
   }
 })

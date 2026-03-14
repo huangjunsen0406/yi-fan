@@ -156,11 +156,14 @@ pub fn run() {
                 let shortcut_ocr_recognize = Shortcut::new(Some(Modifiers::ALT), Code::KeyS);
                 let shortcut_ocr_translate =
                     Shortcut::new(Some(Modifiers::ALT | Modifiers::SHIFT), Code::KeyS);
+                let shortcut_code_format =
+                    Shortcut::new(Some(Modifiers::ALT | Modifiers::SHIFT), Code::KeyU);
 
                 let s_toggle = shortcut_toggle;
                 let s_selection = shortcut_selection;
                 let s_ocr_rec = shortcut_ocr_recognize;
                 let s_ocr_trans = shortcut_ocr_translate;
+                let s_code_fmt = shortcut_code_format;
 
                 app.handle().plugin(
                     tauri_plugin_global_shortcut::Builder::new()
@@ -191,6 +194,11 @@ pub fn run() {
                                     std::thread::spawn(move || {
                                         do_ocr_translate(app);
                                     });
+                                } else if shortcut == &s_code_fmt {
+                                    // Emit event to frontend to cycle code format
+                                    if let Some(window) = app.get_webview_window("main") {
+                                        let _ = window.emit("cycle-code-format", ());
+                                    }
                                 }
                             }
                         })
@@ -202,8 +210,9 @@ pub fn run() {
                 gs.register(shortcut_selection)?;
                 gs.register(shortcut_ocr_recognize)?;
                 gs.register(shortcut_ocr_translate)?;
+                gs.register(shortcut_code_format)?;
 
-                println!("Registered global shortcuts: Alt+Space, Alt+D, Alt+S, Alt+Shift+S");
+                println!("Registered global shortcuts: Alt+Space, Alt+D, Alt+S, Alt+Shift+S, Alt+Shift+U");
             }
             Ok(())
         })

@@ -109,7 +109,14 @@ onMounted(async () => {
     }
   })
 
-  // 5. 托盘菜单 → 导航
+  // 5. Alt+Shift+U → 循环转换代码命名格式
+  await listen('cycle-code-format', async () => {
+    await store.cycleCodeFormat()
+    const label = store.codeFormatLabels[store.activeFormat] || store.activeFormat
+    console.log(`[code-format] Cycled to: ${store.activeFormat} (${label})`)
+  })
+
+  // 6. 托盘菜单 → 导航
   await listen<string>('navigate', (event) => {
     const path = event.payload
     if (path) router.push(path)

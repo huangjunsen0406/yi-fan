@@ -103,11 +103,13 @@ pub fn clipboard_skip_next(text: String) {
 }
 
 /// Temporarily pause clipboard monitoring (e.g., during selection translate).
-pub fn pause() {
+#[tauri::command]
+pub fn pause_clipboard_monitor_temp() {
     PAUSED.store(true, Ordering::SeqCst);
 }
 
 /// Resume clipboard monitoring after a pause.
-pub fn resume() {
+#[tauri::command]
+pub fn resume_clipboard_monitor_temp() {
     PAUSED.store(false, Ordering::SeqCst);
 }

@@ -1,11 +1,38 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useTranslateStore } from '../stores/translate'
 import { speak, stopTTS } from '../services/tts'
 
 const store = useTranslateStore()
 const speaking = ref(false)
 const justCopied = ref(false)
+
+const autoCopyLabel = computed(() => {
+  switch (store.autoCopyMode) {
+    case 'source': return '原文'
+    case 'target': return '译文'
+    case 'source_target': return '双语'
+    default: return '自动'
+  }
+})
+
+const autoCopyIcon = computed(() => {
+  switch (store.autoCopyMode) {
+    case 'source': return 'ph-clipboard-text'
+    case 'target': return 'ph-clipboard-text'
+    case 'source_target': return 'ph-files'
+    default: return 'ph-clipboard-text'
+  }
+})
+
+const autoCopyTitle = computed(() => {
+  switch (store.autoCopyMode) {
+    case 'source': return '自动复制: 原文'
+    case 'target': return '自动复制: 译文'
+    case 'source_target': return '自动复制: 原文+译文'
+    default: return '自动复制: 关闭'
+  }
+})
 
 async function handleSpeak() {
   if (speaking.value) {
@@ -65,9 +92,16 @@ async function handleCopy() {
       </div>
     </div>
 
-    <!-- Normal single output -->
+    <!-- Normal single output / bilingual display -->
     <div v-else class="output-content" :class="{ 'code-mode': store.mode === 'code' }">
-      <p class="output-text">{{ store.outputText }}</p>
+      <!-- Bilingual mode: show source + target -->
+      <div v-if="store.autoCopyMode === 'source_target' && store.outputText && store.inputText" class="bilingual-output">
+        <p class="bilingual-source">{{ store.inputText }}</p>
+        <div class="bilingual-divider"><i class="ph ph-arrow-down"></i></div>
+        <p class="output-text">{{ store.outputText }}</p>
+      </div>
+      <!-- Normal mode -->
+      <p v-else class="output-text">{{ store.outputText }}</p>
       <div v-if="store.mode === 'code'" class="code-watermark">
         &lt;code/&gt;
       </div>
@@ -95,15 +129,15 @@ async function handleCopy() {
 
       <div class="spacer"></div>
 
-      <!-- Auto-copy toggle -->
+      <!-- Auto-copy mode cycle -->
       <button
         class="icon-btn auto-copy-btn"
-        :class="{ active: store.autoCopy }"
-        :title="store.autoCopy ? '自动复制: 开' : '自动复制: 关'"
-        @click="store.toggleAutoCopy()"
+        :class="{ active: store.autoCopyMode !== 'disable' }"
+        :title="autoCopyTitle"
+        @click="store.cycleAutoCopyMode()"
       >
-        <i class="ph ph-clipboard-text"></i>
-        <span class="auto-label">自动</span>
+        <i class="ph" :class="autoCopyIcon"></i>
+        <span class="auto-label">{{ autoCopyLabel }}</span>
       </button>
 
       <!-- Multi-engine toggle -->
@@ -170,6 +204,36 @@ async function handleCopy() {
   pointer-events: none;
   white-space: nowrap;
   user-select: none;
+}
+
+/* Bilingual display */
+.bilingual-output {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bilingual-source {
+  font-size: var(--font-size-base);
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  opacity: 0.7;
+}
+
+.bilingual-divider {
+  color: var(--color-text-placeholder);
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bilingual-divider::before,
+.bilingual-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--color-border-light);
 }
 
 /* Multi-engine results */

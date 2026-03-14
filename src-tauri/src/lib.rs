@@ -42,7 +42,7 @@ fn hide_main(app: &tauri::AppHandle) {
 /// Selection translate: get selected text → show window → emit text
 pub(crate) fn do_selection_translate(app: tauri::AppHandle) {
     // Pause clipboard monitor so Cmd+C doesn't trigger it
-    clipboard::pause();
+    clipboard::pause_clipboard_monitor_temp();
 
     // get_selected_text() simulates Cmd+C → reads clipboard
     // Must run while the OTHER app still has focus
@@ -61,7 +61,7 @@ pub(crate) fn do_selection_translate(app: tauri::AppHandle) {
 
     // Resume clipboard monitor after a short delay
     std::thread::sleep(std::time::Duration::from_millis(300));
-    clipboard::resume();
+    clipboard::resume_clipboard_monitor_temp();
 }
 
 /// OCR recognize: hide window → screencapture → show window → emit navigate
@@ -222,6 +222,8 @@ pub fn run() {
             clipboard::start_clipboard_monitor,
             clipboard::stop_clipboard_monitor,
             clipboard::clipboard_skip_next,
+            clipboard::pause_clipboard_monitor_temp,
+            clipboard::resume_clipboard_monitor_temp,
             lang_detect::detect_language,
         ])
         .run(tauri::generate_context!())

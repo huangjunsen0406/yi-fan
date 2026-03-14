@@ -43,6 +43,9 @@ onMounted(async () => {
     const text = event.payload
     if (!text || !text.trim()) return
 
+    // Pause clipboard monitoring during translation to prevent infinite loop
+    try { await invoke('pause_clipboard_monitor_temp') } catch { /* ignore */ }
+
     // Detect language via Rust lingua
     let detectedLang = ''
     try {
@@ -76,7 +79,7 @@ onMounted(async () => {
       const result = await translate(engineName, text.trim(), sourceLang, targetLang, config)
       store.outputText = result
 
-      // Auto-copy the result, and tell Rust to skip it
+      // Auto-copy the result back to clipboard
       if (result) {
         try {
           await invoke('clipboard_skip_next', { text: result })
@@ -101,6 +104,8 @@ onMounted(async () => {
       store.error = err.message || '翻译失败'
     } finally {
       store.loading = false
+      // Resume clipboard monitoring (Rust will update previous_text to current clipboard)
+      try { await invoke('resume_clipboard_monitor_temp') } catch { /* ignore */ }
     }
   })
 

@@ -30,8 +30,9 @@ export const useTranslateStore = defineStore('translate', () => {
   const multiEngineResults = ref<EngineResult[]>([])
   const multiEngineMode = ref(false)
 
-  // ── Auto-copy ──
-  const autoCopy = ref(false)
+  // ── Auto-copy mode: 'disable' | 'source' | 'target' | 'source_target' ──
+  type AutoCopyMode = 'disable' | 'source' | 'target' | 'source_target'
+  const autoCopyMode = ref<AutoCopyMode>('disable')
 
   // 从 settings 加载用户设置的默认语言
   async function initDefaults() {
@@ -41,8 +42,10 @@ export const useTranslateStore = defineStore('translate', () => {
     if (savedSrc) sourceLang.value = savedSrc
     const savedTgt = settings.getConfig('_translate')['defaultTargetLang']
     if (savedTgt) targetLang.value = savedTgt
-    const savedAutoCopy = settings.getConfig('_translate')['autoCopy']
-    if (savedAutoCopy === 'true') autoCopy.value = true
+    const savedAutoCopy = settings.getConfig('_translate')['autoCopyMode']
+    if (savedAutoCopy && ['disable', 'source', 'target', 'source_target'].includes(savedAutoCopy)) {
+      autoCopyMode.value = savedAutoCopy as AutoCopyMode
+    }
     const savedMulti = settings.getConfig('_translate')['multiEngineMode']
     if (savedMulti === 'true') multiEngineMode.value = true
   }
@@ -148,9 +151,9 @@ export const useTranslateStore = defineStore('translate', () => {
         )
       }
 
-      // Auto-copy
-      if (autoCopy.value && outputText.value) {
-        await copyToClipboard(outputText.value)
+      // Auto-copy based on mode
+      if (autoCopyMode.value !== 'disable' && outputText.value) {
+        await handleAutoCopy(inputText.value, outputText.value)
       }
 
       // Save history
@@ -222,8 +225,8 @@ export const useTranslateStore = defineStore('translate', () => {
     loading.value = false
 
     // Auto-copy first successful result
-    if (autoCopy.value && outputText.value) {
-      await copyToClipboard(outputText.value)
+    if (autoCopyMode.value !== 'disable' && outputText.value) {
+      await handleAutoCopy(inputText.value, outputText.value)
     }
 
     // Save first successful result to history
@@ -264,11 +267,41 @@ export const useTranslateStore = defineStore('translate', () => {
     }
   }
 
-  // Toggle auto-copy
-  async function toggleAutoCopy() {
-    autoCopy.value = !autoCopy.value
+  // Auto-copy handler: copies based on current mode, pauses clipboard monitor to avoid conflict
+  async function handleAutoCopy(source: string, target: string) {
+    let textToCopy = ''
+    switch (autoCopyMode.value) {
+      case 'source':
+        textToCopy = source
+        break
+      case 'target':
+        textToCopy = target
+        break
+      case 'source_target':
+        textToCopy = source.trim() + '\n\n' + target.trim()
+        break
+      default:
+        return
+    }
+    if (!textToCopy.trim()) return
+
+    try {
+      // Pause monitor → skip next → write → resume
+      await invoke('pause_clipboard_monitor_temp')
+      await invoke('clipboard_skip_next', { text: textToCopy })
+      await copyToClipboard(textToCopy)
+    } catch { /* ignore */ } finally {
+      try { await invoke('resume_clipboard_monitor_temp') } catch { /* ignore */ }
+    }
+  }
+
+  // Cycle auto-copy mode: disable → target → source → source_target → disable
+  async function cycleAutoCopyMode() {
+    const modes: AutoCopyMode[] = ['disable', 'target', 'source', 'source_target']
+    const idx = modes.indexOf(autoCopyMode.value)
+    autoCopyMode.value = modes[(idx + 1) % modes.length]
     const settings = useSettingsStore()
-    settings.setConfig('_translate', 'autoCopy', String(autoCopy.value))
+    settings.setConfig('_translate', 'autoCopyMode', autoCopyMode.value)
     await settings.save()
   }
 
@@ -293,7 +326,7 @@ export const useTranslateStore = defineStore('translate', () => {
     error,
     multiEngineResults,
     multiEngineMode,
-    autoCopy,
+    autoCopyMode,
     toggleMode,
     clearInput,
     doTranslate,
@@ -301,7 +334,8 @@ export const useTranslateStore = defineStore('translate', () => {
     initDefaults,
     detectInputLang,
     copyToClipboard,
-    toggleAutoCopy,
+    handleAutoCopy,
+    cycleAutoCopyMode,
     toggleMultiEngine,
   }
 })

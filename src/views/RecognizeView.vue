@@ -2,8 +2,10 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { getBase64, systemOCR } from '../services/ocr'
+import { useSettingsStore } from '../stores/settings'
 
 const router = useRouter()
+const settings = useSettingsStore()
 
 const base64 = ref('')
 const ocrText = ref('')
@@ -26,8 +28,35 @@ async function doOCR() {
   loading.value = true
   error.value = ''
   try {
-    const text = await systemOCR(ocrLang.value)
+    let text = await systemOCR(ocrLang.value)
+
+    // 应用设置：删除换行
+    const ocrSettings = settings.getConfig('_ocr')
+    if (ocrSettings['deleteNewline'] === 'true') {
+      text = text.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim()
+    }
+
     ocrText.value = text
+
+    // 应用设置：自动复制
+    if (ocrSettings['autoCopy'] === 'true' && text) {
+      try {
+        await navigator.clipboard.writeText(text)
+      } catch {
+        // fallback
+        const ta = document.createElement('textarea')
+        ta.value = text
+        document.body.appendChild(ta)
+        ta.select()
+        document.execCommand('copy')
+        document.body.removeChild(ta)
+      }
+    }
+
+    // 应用设置：自动翻译
+    if (ocrSettings['autoTranslate'] === 'true' && text) {
+      router.push({ path: '/', query: { text } })
+    }
   } catch (err: any) {
     error.value = err.message || err.toString() || 'OCR 识别失败'
   } finally {
@@ -59,6 +88,12 @@ function goBack() {
 }
 
 onMounted(async () => {
+  await settings.init()
+  // 从设置中读取默认 OCR 语言
+  const savedOcr = settings.getConfig('_ocr')
+  if (savedOcr['defaultLang']) {
+    ocrLang.value = savedOcr['defaultLang']
+  }
   try {
     base64.value = await getBase64()
     await doOCR()

@@ -9,12 +9,13 @@ const router = useRouter()
 const settings = useSettingsStore()
 
 // ── 一级导航 ──
-type PageKey = 'hotkey' | 'translate' | 'service' | 'about'
+type PageKey = 'hotkey' | 'translate' | 'ocr' | 'service' | 'about'
 const activePage = ref<PageKey>('hotkey')
 
 const sidebarItems: { key: PageKey; icon: string; label: string }[] = [
   { key: 'hotkey',    icon: 'ph-keyboard',   label: '快捷键' },
   { key: 'translate', icon: 'ph-translate',  label: '翻译' },
+  { key: 'ocr',       icon: 'ph-scan',       label: '文字识别' },
   { key: 'service',   icon: 'ph-puzzle-piece', label: '服务' },
   { key: 'about',     icon: 'ph-info',       label: '关于' },
 ]
@@ -36,9 +37,34 @@ const defaultTargetLang = ref('简体中文')
 const showSourceDrop = ref(false)
 const showTargetDrop = ref(false)
 
+// ── OCR 设置 ──
+const ocrLangOptions = [
+  { value: 'auto', label: '自动检测' },
+  { value: 'zh-Hans', label: '简体中文' },
+  { value: 'zh-Hant', label: '繁体中文' },
+  { value: 'en-US', label: '英语' },
+  { value: 'ja-JP', label: '日语' },
+  { value: 'ko-KR', label: '韩语' },
+  { value: 'fr-FR', label: '法语' },
+  { value: 'de-DE', label: '德语' },
+]
+const ocrLang = ref('auto')
+const ocrDeleteNewline = ref(false)
+const ocrAutoCopy = ref(false)
+const ocrAutoTranslate = ref(false)
+const showOcrLangDrop = ref(false)
+
+function saveOcrSettings() {
+  settings.setConfig('_ocr', 'defaultLang', ocrLang.value)
+  settings.setConfig('_ocr', 'deleteNewline', String(ocrDeleteNewline.value))
+  settings.setConfig('_ocr', 'autoCopy', String(ocrAutoCopy.value))
+  settings.setConfig('_ocr', 'autoTranslate', String(ocrAutoTranslate.value))
+}
+
 function closeAllDropdowns() {
   showSourceDrop.value = false
   showTargetDrop.value = false
+  showOcrLangDrop.value = false
 }
 
 function saveDefaultLangs() {
@@ -181,6 +207,12 @@ onMounted(async () => {
   if (savedSrcLang) defaultSourceLang.value = savedSrcLang
   const savedTgtLang = settings.getConfig('_translate')['defaultTargetLang']
   if (savedTgtLang) defaultTargetLang.value = savedTgtLang
+  // 加载 OCR 设置
+  const savedOcr = settings.getConfig('_ocr')
+  if (savedOcr['defaultLang']) ocrLang.value = savedOcr['defaultLang']
+  if (savedOcr['deleteNewline'] === 'true') ocrDeleteNewline.value = true
+  if (savedOcr['autoCopy'] === 'true') ocrAutoCopy.value = true
+  if (savedOcr['autoTranslate'] === 'true') ocrAutoTranslate.value = true
   // 点击外部关闭下拉
   document.addEventListener('click', closeAllDropdowns)
 })
@@ -318,6 +350,76 @@ onMounted(async () => {
                   <span class="toggle-knob"></span>
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ========== 文字识别设置页 ========== -->
+        <div v-if="activePage === 'ocr'" class="page-panel">
+          <div class="config-card">
+            <h3 class="card-title">文字识别偏好</h3>
+            <p class="card-desc">配置 OCR 截图识别的默认行为。</p>
+
+            <!-- 默认识别语言 -->
+            <div class="config-row">
+              <span class="row-label">默认识别语言</span>
+              <div class="custom-select" :class="{ open: showOcrLangDrop }" @click.stop="showOcrLangDrop = !showOcrLangDrop; showSourceDrop = false; showTargetDrop = false">
+                <span class="select-text">{{ ocrLangOptions.find(o => o.value === ocrLang)?.label || '自动检测' }}</span>
+                <i class="ph ph-caret-down select-arrow"></i>
+                <div v-if="showOcrLangDrop" class="select-dropdown">
+                  <div
+                    v-for="opt in ocrLangOptions"
+                    :key="opt.value"
+                    class="select-option"
+                    :class="{ active: ocrLang === opt.value }"
+                    @click.stop="ocrLang = opt.value; showOcrLangDrop = false; saveOcrSettings()"
+                  >{{ opt.label }}</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 识别后删除换行 -->
+            <div class="config-row">
+              <span class="row-label">识别后删除换行</span>
+              <button
+                class="toggle-btn"
+                :class="{ active: ocrDeleteNewline }"
+                @click="ocrDeleteNewline = !ocrDeleteNewline; saveOcrSettings()"
+              >
+                <span class="toggle-knob"></span>
+              </button>
+            </div>
+
+            <!-- 识别后自动复制 -->
+            <div class="config-row">
+              <span class="row-label">识别后自动复制</span>
+              <button
+                class="toggle-btn"
+                :class="{ active: ocrAutoCopy }"
+                @click="ocrAutoCopy = !ocrAutoCopy; saveOcrSettings()"
+              >
+                <span class="toggle-knob"></span>
+              </button>
+            </div>
+
+            <!-- 识别后自动翻译 -->
+            <div class="config-row">
+              <span class="row-label">识别后自动翻译</span>
+              <button
+                class="toggle-btn"
+                :class="{ active: ocrAutoTranslate }"
+                @click="ocrAutoTranslate = !ocrAutoTranslate; saveOcrSettings()"
+              >
+                <span class="toggle-knob"></span>
+              </button>
+            </div>
+          </div>
+
+          <div class="info-card">
+            <i class="ph ph-info"></i>
+            <div>
+              <strong>使用说明</strong>
+              <p>使用快捷键（默认 Alt+S）截图识别文字，或使用 Alt+Shift+S 截图后直接翻译。上述设置会影响截图识别（Alt+S）的行为。</p>
             </div>
           </div>
         </div>

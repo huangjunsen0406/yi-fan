@@ -38,6 +38,7 @@ const namingFormats: NamingFormat[] = [
   { id: 'snake_case', label: '下划线' },
   { id: 'kebab-case', label: '中划线(小)' },
   { id: 'KEBAB-CASE', label: '中划线(大)' },
+  { id: 'CONSTANT_CASE', label: '常量' },
   { id: 'words', label: '分词(小)' },
 ]
 

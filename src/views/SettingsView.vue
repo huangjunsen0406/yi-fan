@@ -22,6 +22,30 @@ const sidebarItems: { key: PageKey; icon: string; label: string }[] = [
 // ── 服务页: 当前选中的引擎 ──
 const activeEngine = ref(providers[0]?.name || '')
 
+// ── 翻译页: 语言选项 ──
+const sourceLanguages = [
+  '自动检测', '简体中文', '繁体中文', '英语', '日语', '韩语',
+  '法语', '德语', '西班牙语', '俄语', '文言文',
+]
+const targetLanguages = [
+  '简体中文', '繁体中文', '英语', '日语', '韩语',
+  '法语', '德语', '西班牙语', '俄语',
+]
+const defaultSourceLang = ref('自动检测')
+const defaultTargetLang = ref('简体中文')
+const showSourceDrop = ref(false)
+const showTargetDrop = ref(false)
+
+function closeAllDropdowns() {
+  showSourceDrop.value = false
+  showTargetDrop.value = false
+}
+
+function saveDefaultLangs() {
+  settings.setConfig('_translate', 'defaultSourceLang', defaultSourceLang.value)
+  settings.setConfig('_translate', 'defaultTargetLang', defaultTargetLang.value)
+}
+
 // ── 快捷键 ──
 const hotkeyToggle = ref('Alt+Space')
 const hotkeyRecording = ref(false)
@@ -108,6 +132,12 @@ onMounted(async () => {
   await settings.init()
   const savedToggle = settings.getConfig('_hotkeys')['toggle']
   if (savedToggle) hotkeyToggle.value = savedToggle
+  const savedSrcLang = settings.getConfig('_translate')['defaultSourceLang']
+  if (savedSrcLang) defaultSourceLang.value = savedSrcLang
+  const savedTgtLang = settings.getConfig('_translate')['defaultTargetLang']
+  if (savedTgtLang) defaultTargetLang.value = savedTgtLang
+  // 点击外部关闭下拉
+  document.addEventListener('click', closeAllDropdowns)
 })
 </script>
 
@@ -194,11 +224,35 @@ onMounted(async () => {
             <h3 class="card-title">翻译偏好</h3>
             <div class="config-row">
               <span class="row-label">默认源语言</span>
-              <span class="row-value">自动检测</span>
+              <div class="custom-select" :class="{ open: showSourceDrop }" @click.stop="showSourceDrop = !showSourceDrop; showTargetDrop = false">
+                <span class="select-text">{{ defaultSourceLang }}</span>
+                <i class="ph ph-caret-down select-arrow"></i>
+                <div v-if="showSourceDrop" class="select-dropdown">
+                  <div
+                    v-for="lang in sourceLanguages"
+                    :key="lang"
+                    class="select-option"
+                    :class="{ active: defaultSourceLang === lang }"
+                    @click.stop="defaultSourceLang = lang; showSourceDrop = false; saveDefaultLangs()"
+                  >{{ lang }}</div>
+                </div>
+              </div>
             </div>
             <div class="config-row">
               <span class="row-label">默认目标语言</span>
-              <span class="row-value">简体中文</span>
+              <div class="custom-select" :class="{ open: showTargetDrop }" @click.stop="showTargetDrop = !showTargetDrop; showSourceDrop = false">
+                <span class="select-text">{{ defaultTargetLang }}</span>
+                <i class="ph ph-caret-down select-arrow"></i>
+                <div v-if="showTargetDrop" class="select-dropdown">
+                  <div
+                    v-for="lang in targetLanguages"
+                    :key="lang"
+                    class="select-option"
+                    :class="{ active: defaultTargetLang === lang }"
+                    @click.stop="defaultTargetLang = lang; showTargetDrop = false; saveDefaultLangs()"
+                  >{{ lang }}</div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -502,6 +556,70 @@ onMounted(async () => {
 .row-value {
   font-size: var(--font-size-sm);
   color: var(--color-text-secondary);
+}
+
+/* ── Custom Select (Arco style) ── */
+.custom-select {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  border: 1.5px solid var(--color-border);
+  background: var(--color-bg-page);
+  font-size: var(--font-size-sm);
+  color: var(--color-text);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  min-width: 120px;
+  user-select: none;
+}
+
+.custom-select:hover { border-color: var(--color-primary); }
+.custom-select.open { border-color: var(--color-primary); box-shadow: 0 0 0 2px rgba(79,110,247,0.1); }
+
+.select-text { flex: 1; }
+.select-arrow { font-size: 12px; color: var(--color-text-placeholder); transition: transform 0.2s; }
+.custom-select.open .select-arrow { transform: rotate(180deg); }
+
+.select-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 100%;
+  background: #ffffff;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+  padding: 4px;
+  z-index: 100;
+  max-height: 240px;
+  overflow-y: auto;
+  animation: dropIn 0.15s ease;
+}
+
+@keyframes dropIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.select-option {
+  padding: 7px 12px;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-sm);
+  color: var(--color-text);
+  cursor: pointer;
+  transition: all 0.1s;
+  white-space: nowrap;
+}
+
+.select-option:hover { background: var(--color-bg-hover); }
+
+.select-option.active {
+  color: var(--color-primary);
+  font-weight: 600;
+  background: rgba(79, 110, 247, 0.08);
 }
 
 /* ── Toggle Button ── */

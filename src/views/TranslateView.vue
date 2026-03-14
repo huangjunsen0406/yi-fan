@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useDebounceFn } from '@vueuse/core'
 import { useTranslateStore } from '../stores/translate'
 import TextInput from '../components/TextInput.vue'
@@ -9,6 +9,10 @@ import TextOutput from '../components/TextOutput.vue'
 import ActionBar from '../components/ActionBar.vue'
 
 const store = useTranslateStore()
+
+onMounted(() => {
+  store.initDefaults()
+})
 
 // ── Auto-translate with debounce ──
 const debouncedTranslate = useDebounceFn(() => {
@@ -22,7 +26,7 @@ watch(
 )
 
 watch(
-  () => [store.activeEngine, store.sourceLang, store.targetLang],
+  () => [store.activeEngine, store.sourceLang, store.targetLang, store.activeFormat, store.mode],
   () => {
     if (store.inputText.trim()) {
       debouncedTranslate()

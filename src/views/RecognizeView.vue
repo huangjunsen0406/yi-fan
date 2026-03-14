@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { getBase64, systemOCR } from '../services/ocr'
+import { getBase64, systemOCR, ocrProviders, recognize as ocrRecognize } from '../services/ocr'
 import { useSettingsStore } from '../stores/settings'
 
 const router = useRouter()
@@ -12,6 +12,7 @@ const ocrText = ref('')
 const loading = ref(true)
 const error = ref('')
 const ocrLang = ref('auto')
+const activeEngine = ref('system_ocr')
 
 const langOptions = [
   { value: 'auto', label: '自动检测' },
@@ -28,10 +29,26 @@ async function doOCR() {
   loading.value = true
   error.value = ''
   try {
-    let text = await systemOCR(ocrLang.value)
+    let text = ''
+    const ocrSettings = settings.getConfig('_ocr')
+    const engineConfig = settings.getConfig(activeEngine.value)
+
+    if (activeEngine.value === 'system_ocr') {
+      // 系统 OCR 直接调用 Rust 命令（从截图文件读取）
+      text = await systemOCR(ocrLang.value)
+    } else {
+      // 在线 OCR 引擎用 base64 图片调用 API
+      if (!base64.value) {
+        base64.value = await getBase64()
+      }
+      // 找到引擎对应的语言映射
+      const provider = ocrProviders.find(p => p.name === activeEngine.value)
+      const langLabel = langOptions.find(o => o.value === ocrLang.value)?.label || '自动检测'
+      const mappedLang = provider?.langMap[langLabel] || ocrLang.value
+      text = await ocrRecognize(activeEngine.value, base64.value, mappedLang, engineConfig)
+    }
 
     // 应用设置：删除换行
-    const ocrSettings = settings.getConfig('_ocr')
     if (ocrSettings['deleteNewline'] === 'true') {
       text = text.replace(/\n/g, ' ').replace(/\s+/g, ' ').trim()
     }
@@ -43,7 +60,6 @@ async function doOCR() {
       try {
         await navigator.clipboard.writeText(text)
       } catch {
-        // fallback
         const ta = document.createElement('textarea')
         ta.value = text
         document.body.appendChild(ta)
@@ -89,11 +105,9 @@ function goBack() {
 
 onMounted(async () => {
   await settings.init()
-  // 从设置中读取默认 OCR 语言
   const savedOcr = settings.getConfig('_ocr')
-  if (savedOcr['defaultLang']) {
-    ocrLang.value = savedOcr['defaultLang']
-  }
+  if (savedOcr['defaultLang']) ocrLang.value = savedOcr['defaultLang']
+  if (savedOcr['activeEngine']) activeEngine.value = savedOcr['activeEngine']
   try {
     base64.value = await getBase64()
     await doOCR()
@@ -164,6 +178,11 @@ onMounted(async () => {
     <!-- 底部控制栏 -->
     <div class="recognize-footer">
       <div class="footer-left">
+        <select v-model="activeEngine" class="lang-select" @change="doOCR">
+          <option v-for="p in ocrProviders" :key="p.name" :value="p.name">
+            {{ p.label }}
+          </option>
+        </select>
         <select v-model="ocrLang" class="lang-select">
           <option v-for="opt in langOptions" :key="opt.value" :value="opt.value">
             {{ opt.label }}

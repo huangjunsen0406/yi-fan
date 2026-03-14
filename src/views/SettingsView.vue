@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSettingsStore } from '../stores/settings'
 import { providers, getProvider } from '../services/translate'
+import { ocrProviders, getOcrProvider } from '../services/ocr'
 import { register, unregister, unregisterAll, isRegistered } from '@tauri-apps/plugin-global-shortcut'
 
 const router = useRouter()
@@ -52,19 +53,52 @@ const ocrLang = ref('auto')
 const ocrDeleteNewline = ref(false)
 const ocrAutoCopy = ref(false)
 const ocrAutoTranslate = ref(false)
+const ocrHideWindow = ref(false)
+const ocrCloseOnBlur = ref(false)
 const showOcrLangDrop = ref(false)
+const showOcrEngineDrop = ref(false)
+
+// OCR 引擎管理
+const defaultOcrEngine = ref('system_ocr')  // 实际使用的引擎
+const activeOcrEngine = ref('system_ocr')   // 设置页当前浏览的引擎
+const ocrTestResults = ref<Record<string, { status: 'idle' | 'loading' | 'success' | 'error'; message: string }>>({})
+for (const p of ocrProviders) ocrTestResults.value[p.name] = { status: 'idle', message: '' }
+
 
 function saveOcrSettings() {
   settings.setConfig('_ocr', 'defaultLang', ocrLang.value)
   settings.setConfig('_ocr', 'deleteNewline', String(ocrDeleteNewline.value))
   settings.setConfig('_ocr', 'autoCopy', String(ocrAutoCopy.value))
   settings.setConfig('_ocr', 'autoTranslate', String(ocrAutoTranslate.value))
+  settings.setConfig('_ocr', 'hideWindow', String(ocrHideWindow.value))
+  settings.setConfig('_ocr', 'closeOnBlur', String(ocrCloseOnBlur.value))
+  settings.setConfig('_ocr', 'activeEngine', defaultOcrEngine.value)
+}
+
+async function testOcrEngine(name: string) {
+  ocrTestResults.value[name] = { status: 'loading', message: '测试中...' }
+  try {
+    const provider = getOcrProvider(name)
+    if (!provider) throw new Error('未知引擎')
+    if (name === 'system_ocr') {
+      ocrTestResults.value[name] = { status: 'success', message: '✓ 系统 OCR 可用' }
+      return
+    }
+    const config = settings.getConfig(name)
+    // Use a tiny test image (1x1 white pixel PNG base64)
+    const testBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=='
+    await provider.recognize(testBase64, 'auto', config)
+    ocrTestResults.value[name] = { status: 'success', message: '✓ 连接成功' }
+  } catch (err: any) {
+    ocrTestResults.value[name] = { status: 'error', message: err.message || '测试失败' }
+  }
 }
 
 function closeAllDropdowns() {
   showSourceDrop.value = false
   showTargetDrop.value = false
   showOcrLangDrop.value = false
+  showOcrEngineDrop.value = false
 }
 
 function saveDefaultLangs() {
@@ -86,6 +120,7 @@ const hotkeys = ref<HotkeyItem[]>([
   { id: 'selection',   label: '划词翻译',       command: 'selection_translate', value: 'Alt+D',       status: { type: 'idle', message: '' } },
   { id: 'ocr_recognize', label: '截图识别(OCR)', command: 'ocr_recognize',      value: 'Alt+S',       status: { type: 'idle', message: '' } },
   { id: 'ocr_translate', label: '截图翻译',     command: 'ocr_translate',      value: 'Alt+Shift+S', status: { type: 'idle', message: '' } },
+  { id: 'code_format',   label: '代码格式切换',  command: 'cycle_code_format',  value: 'Alt+Shift+U', status: { type: 'idle', message: '' } },
 ])
 const activeHotkeyIdx = ref(-1)
 
@@ -213,6 +248,12 @@ onMounted(async () => {
   if (savedOcr['deleteNewline'] === 'true') ocrDeleteNewline.value = true
   if (savedOcr['autoCopy'] === 'true') ocrAutoCopy.value = true
   if (savedOcr['autoTranslate'] === 'true') ocrAutoTranslate.value = true
+  if (savedOcr['hideWindow'] === 'true') ocrHideWindow.value = true
+  if (savedOcr['closeOnBlur'] === 'true') ocrCloseOnBlur.value = true
+  if (savedOcr['activeEngine']) {
+    defaultOcrEngine.value = savedOcr['activeEngine']
+    activeOcrEngine.value = savedOcr['activeEngine']
+  }
   // 点击外部关闭下拉
   document.addEventListener('click', closeAllDropdowns)
 })
@@ -357,8 +398,25 @@ onMounted(async () => {
         <!-- ========== 文字识别设置页 ========== -->
         <div v-if="activePage === 'ocr'" class="page-panel">
           <div class="config-card">
-            <h3 class="card-title">文字识别偏好</h3>
-            <p class="card-desc">配置 OCR 截图识别的默认行为。</p>
+            <h3 class="card-title">识别偏好</h3>
+
+            <!-- 默认识别引擎 -->
+            <div class="config-row">
+              <span class="row-label">默认识别引擎</span>
+              <div class="custom-select" :class="{ open: showOcrEngineDrop }" @click.stop="showOcrEngineDrop = !showOcrEngineDrop; showOcrLangDrop = false">
+                <span class="select-text">{{ ocrProviders.find(p => p.name === defaultOcrEngine)?.label || '系统 OCR' }}</span>
+                <i class="ph ph-caret-down select-arrow"></i>
+                <div v-if="showOcrEngineDrop" class="select-dropdown">
+                  <div
+                    v-for="p in ocrProviders"
+                    :key="p.name"
+                    class="select-option"
+                    :class="{ active: defaultOcrEngine === p.name }"
+                    @click.stop="defaultOcrEngine = p.name; showOcrEngineDrop = false; saveOcrSettings()"
+                  >{{ p.label }}</div>
+                </div>
+              </div>
+            </div>
 
             <!-- 默认识别语言 -->
             <div class="config-row">
@@ -378,48 +436,93 @@ onMounted(async () => {
               </div>
             </div>
 
-            <!-- 识别后删除换行 -->
             <div class="config-row">
               <span class="row-label">识别后删除换行</span>
-              <button
-                class="toggle-btn"
-                :class="{ active: ocrDeleteNewline }"
-                @click="ocrDeleteNewline = !ocrDeleteNewline; saveOcrSettings()"
-              >
+              <button class="toggle-btn" :class="{ active: ocrDeleteNewline }" @click="ocrDeleteNewline = !ocrDeleteNewline; saveOcrSettings()">
                 <span class="toggle-knob"></span>
               </button>
             </div>
-
-            <!-- 识别后自动复制 -->
             <div class="config-row">
               <span class="row-label">识别后自动复制</span>
-              <button
-                class="toggle-btn"
-                :class="{ active: ocrAutoCopy }"
-                @click="ocrAutoCopy = !ocrAutoCopy; saveOcrSettings()"
-              >
+              <button class="toggle-btn" :class="{ active: ocrAutoCopy }" @click="ocrAutoCopy = !ocrAutoCopy; saveOcrSettings()">
                 <span class="toggle-knob"></span>
               </button>
             </div>
-
-            <!-- 识别后自动翻译 -->
             <div class="config-row">
               <span class="row-label">识别后自动翻译</span>
-              <button
-                class="toggle-btn"
-                :class="{ active: ocrAutoTranslate }"
-                @click="ocrAutoTranslate = !ocrAutoTranslate; saveOcrSettings()"
-              >
+              <button class="toggle-btn" :class="{ active: ocrAutoTranslate }" @click="ocrAutoTranslate = !ocrAutoTranslate; saveOcrSettings()">
+                <span class="toggle-knob"></span>
+              </button>
+            </div>
+            <div class="config-row">
+              <span class="row-label">识别时隐藏窗口</span>
+              <button class="toggle-btn" :class="{ active: ocrHideWindow }" @click="ocrHideWindow = !ocrHideWindow; saveOcrSettings()">
+                <span class="toggle-knob"></span>
+              </button>
+            </div>
+            <div class="config-row">
+              <span class="row-label">失焦后关闭窗口</span>
+              <button class="toggle-btn" :class="{ active: ocrCloseOnBlur }" @click="ocrCloseOnBlur = !ocrCloseOnBlur; saveOcrSettings()">
                 <span class="toggle-knob"></span>
               </button>
             </div>
           </div>
 
-          <div class="info-card">
-            <i class="ph ph-info"></i>
-            <div>
-              <strong>使用说明</strong>
-              <p>使用快捷键（默认 Alt+S）截图识别文字，或使用 Alt+Shift+S 截图后直接翻译。上述设置会影响截图识别（Alt+S）的行为。</p>
+          <!-- OCR 引擎管理：左右分栏，复用翻译服务页样式 -->
+          <div class="service-page">
+            <!-- 左: 引擎列表 -->
+            <div class="engine-list">
+              <button
+                v-for="p in ocrProviders"
+                :key="p.name"
+                class="engine-item"
+                :class="{ active: activeOcrEngine === p.name }"
+                @click="activeOcrEngine = p.name; saveOcrSettings()"
+              >
+                <i class="ph" :class="p.icon"></i>
+                <span>{{ p.label }}</span>
+              </button>
+            </div>
+
+            <!-- 右: 引擎详情 -->
+            <div class="engine-detail" v-if="ocrProviders.find(p => p.name === activeOcrEngine)">
+              <h3 class="card-title">{{ ocrProviders.find(p => p.name === activeOcrEngine)!.label }}</h3>
+              <p class="card-desc">{{ ocrProviders.find(p => p.name === activeOcrEngine)!.description }}</p>
+
+              <!-- 配置表单 -->
+              <div v-if="ocrProviders.find(p => p.name === activeOcrEngine)!.needsConfig" class="config-form">
+                <div v-for="field in ocrProviders.find(p => p.name === activeOcrEngine)!.configFields" :key="field.key" class="form-item">
+                  <label>{{ field.label }}</label>
+                  <input
+                    :type="field.type"
+                    :placeholder="field.placeholder"
+                    :value="settings.getConfig(activeOcrEngine)[field.key] || ''"
+                    @input="settings.setConfig(activeOcrEngine, field.key, ($event.target as HTMLInputElement).value)"
+                  />
+                </div>
+              </div>
+
+              <!-- 无需配置提示 -->
+              <div v-else class="info-card small">
+                <i class="ph ph-check-circle"></i>
+                <div>
+                  <strong>无需配置</strong>
+                  <p>系统原生 OCR，免费离线使用。</p>
+                </div>
+              </div>
+
+              <!-- 测试按钮 -->
+              <div class="test-area">
+                <button
+                  class="action-btn"
+                  @click="testOcrEngine(activeOcrEngine)"
+                >
+                  <i class="ph ph-play"></i> 测试
+                </button>
+                <span class="status-msg" :class="ocrTestResults[activeOcrEngine]?.status">
+                  {{ ocrTestResults[activeOcrEngine]?.message }}
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -445,18 +548,6 @@ onMounted(async () => {
           <div class="engine-detail" v-if="currentProvider">
             <h3 class="card-title">{{ currentProvider.label }}</h3>
             <p class="card-desc">{{ currentProvider.description }}</p>
-
-            <!-- 启用开关 -->
-            <div class="config-row">
-              <span class="row-label">在主页显示</span>
-              <button
-                class="toggle-btn"
-                :class="{ active: settings.isEnabled(currentProvider.name) }"
-                @click="settings.toggleEngine(currentProvider.name)"
-              >
-                <span class="toggle-knob"></span>
-              </button>
-            </div>
 
             <!-- 配置表单 -->
             <div v-if="currentProvider.needsConfig && currentProvider.configFields" class="config-form">
@@ -1055,4 +1146,7 @@ onMounted(async () => {
   background: rgba(79, 110, 247, 0.08);
   color: var(--color-primary);
 }
+
+
 </style>
+

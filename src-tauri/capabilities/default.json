@@ -15,6 +15,7 @@
     "clipboard-manager:allow-read-text",
     "clipboard-manager:allow-write-text",
     "sql:default",
+    "sql:allow-execute",
     {
       "identifier": "http:default",
       "allow": [

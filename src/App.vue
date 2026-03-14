@@ -103,6 +103,35 @@ onMounted(async () => {
       store.loading = false
     }
   })
+
+  // 5. 托盘菜单 → 导航
+  await listen<string>('navigate', (event) => {
+    const path = event.payload
+    if (path) router.push(path)
+  })
+
+  // 6. 托盘菜单 → 剪贴板监听 toggle
+  await listen('tray-clipboard-toggle', async () => {
+    try {
+      const settings = useSettingsStore()
+      await settings.init()
+      const current = settings.getConfig('_clipboard')['enabled'] === 'true'
+      const newState = !current
+      if (newState) {
+        await invoke('start_clipboard_monitor')
+      } else {
+        await invoke('stop_clipboard_monitor')
+      }
+      settings.setConfig('_clipboard', 'enabled', String(newState))
+      await settings.save()
+
+      // Sync AppHeader button state
+      const { emit } = await import('@tauri-apps/api/event')
+      await emit('clipboard-monitor-state', newState)
+    } catch (e) {
+      console.error('Tray clipboard toggle failed:', e)
+    }
+  })
 })
 </script>
 

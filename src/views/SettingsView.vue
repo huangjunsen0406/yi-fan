@@ -79,6 +79,8 @@ async function onHotkeyFocus(idx: number) {
 
 function onHotkeyBlur() {
   activeHotkeyIdx.value = -1
+  // Re-register all shortcuts after focus leaves
+  registerAllHotkeys()
 }
 
 function onHotkeyKeyDown(e: KeyboardEvent, idx: number) {
@@ -118,6 +120,23 @@ async function registerHotkey(idx: number) {
     settings.setConfig('_hotkeys', item.id, key)
   } catch (err: any) {
     item.status = { type: 'error', message: err.message || '注册失败' }
+  }
+}
+
+/** Re-register all shortcuts that have a value */
+async function registerAllHotkeys() {
+  for (let i = 0; i < hotkeys.value.length; i++) {
+    const item = hotkeys.value[i]
+    if (!item.value) continue
+    try {
+      const already = await isRegistered(item.value)
+      if (already) await unregister(item.value)
+      await register(item.value, (event) => {
+        if (event.state === 'Pressed') {
+          import('@tauri-apps/api/core').then(({ invoke }) => invoke(item.command))
+        }
+      })
+    } catch { /* ignore */ }
   }
 }
 

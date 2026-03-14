@@ -4,6 +4,7 @@ use tauri::Manager;
 mod clipboard;
 mod lang_detect;
 mod screenshot;
+mod tray;
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -39,7 +40,10 @@ fn hide_main(app: &tauri::AppHandle) {
 }
 
 /// Selection translate: get selected text → show window → emit text
-fn do_selection_translate(app: tauri::AppHandle) {
+pub(crate) fn do_selection_translate(app: tauri::AppHandle) {
+    // Pause clipboard monitor so Cmd+C doesn't trigger it
+    clipboard::pause();
+
     // get_selected_text() simulates Cmd+C → reads clipboard
     // Must run while the OTHER app still has focus
     match screenshot::get_selected_text() {
@@ -54,10 +58,14 @@ fn do_selection_translate(app: tauri::AppHandle) {
             show_main(&app);
         }
     }
+
+    // Resume clipboard monitor after a short delay
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    clipboard::resume();
 }
 
 /// OCR recognize: hide window → screencapture → show window → emit navigate
-fn do_ocr_recognize(app: tauri::AppHandle) {
+pub(crate) fn do_ocr_recognize(app: tauri::AppHandle) {
     hide_main(&app);
     // Small delay to let the window fully hide
     std::thread::sleep(std::time::Duration::from_millis(200));
@@ -77,7 +85,7 @@ fn do_ocr_recognize(app: tauri::AppHandle) {
 }
 
 /// OCR translate: hide → screencapture → OCR → show → emit text
-fn do_ocr_translate(app: tauri::AppHandle) {
+pub(crate) fn do_ocr_translate(app: tauri::AppHandle) {
     hide_main(&app);
     std::thread::sleep(std::time::Duration::from_millis(200));
 
@@ -106,17 +114,23 @@ fn do_ocr_translate(app: tauri::AppHandle) {
 // Tauri commands (for invoke from frontend)
 #[tauri::command]
 fn selection_translate(app: tauri::AppHandle) {
-    do_selection_translate(app);
+    std::thread::spawn(move || {
+        do_selection_translate(app);
+    });
 }
 
 #[tauri::command]
 fn ocr_recognize(app: tauri::AppHandle) {
-    do_ocr_recognize(app);
+    std::thread::spawn(move || {
+        do_ocr_recognize(app);
+    });
 }
 
 #[tauri::command]
 fn ocr_translate(app: tauri::AppHandle) {
-    do_ocr_translate(app);
+    std::thread::spawn(move || {
+        do_ocr_translate(app);
+    });
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -128,6 +142,9 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
         .setup(|app| {
+            // System tray
+            tray::create_tray(app)?;
+
             #[cfg(desktop)]
             {
                 use tauri_plugin_global_shortcut::{

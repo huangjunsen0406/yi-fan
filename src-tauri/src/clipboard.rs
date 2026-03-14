@@ -6,6 +6,9 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 /// Global flag: is clipboard monitoring active?
 static MONITORING: AtomicBool = AtomicBool::new(false);
 
+/// Temporary pause flag (during selection translate, OCR, etc.)
+static PAUSED: AtomicBool = AtomicBool::new(false);
+
 /// Text to skip on next clipboard poll (set by frontend before auto-copy)
 static SKIP_TEXT: Mutex<String> = Mutex::new(String::new());
 
@@ -34,6 +37,16 @@ pub fn start_clipboard_monitor(app: tauri::AppHandle) {
                 break;
             }
 
+            // Skip polling while paused (selection translate, OCR, etc.)
+            if PAUSED.load(Ordering::SeqCst) {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                // Update previous_text after resume to avoid stale trigger
+                if let Ok(content) = app.clipboard().read_text() {
+                    previous_text = content.trim().to_string();
+                }
+                continue;
+            }
+
             match app.clipboard().read_text() {
                 Ok(content) => {
                     let text = content.trim().to_string();
@@ -60,7 +73,11 @@ pub fn start_clipboard_monitor(app: tauri::AppHandle) {
                     }
                 }
                 Err(e) => {
-                    eprintln!("[clipboard] read_text error: {:?}", e);
+                    // Clipboard may contain non-text data (images, etc.) — this is normal, don't spam logs
+                    let msg = format!("{:?}", e);
+                    if !msg.contains("not available") && !msg.contains("empty") {
+                        eprintln!("[clipboard] read_text error: {:?}", e);
+                    }
                 }
             }
 
@@ -83,4 +100,14 @@ pub fn clipboard_skip_next(text: String) {
     if let Ok(mut skip) = SKIP_TEXT.lock() {
         *skip = text;
     }
+}
+
+/// Temporarily pause clipboard monitoring (e.g., during selection translate).
+pub fn pause() {
+    PAUSED.store(true, Ordering::SeqCst);
+}
+
+/// Resume clipboard monitoring after a pause.
+pub fn resume() {
+    PAUSED.store(false, Ordering::SeqCst);
 }

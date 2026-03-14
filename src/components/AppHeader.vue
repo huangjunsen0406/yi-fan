@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { useSettingsStore } from '../stores/settings'
 
 const settings = useSettingsStore()
 const clipboardActive = ref(false)
+let unlisten: UnlistenFn | null = null
 
 onMounted(async () => {
   await settings.init()
@@ -13,6 +15,15 @@ onMounted(async () => {
     clipboardActive.value = true
     try { await invoke('start_clipboard_monitor') } catch { /* ignore */ }
   }
+
+  // Listen for external state changes (from tray menu)
+  unlisten = await listen<boolean>('clipboard-monitor-state', (event) => {
+    clipboardActive.value = event.payload
+  })
+})
+
+onUnmounted(() => {
+  unlisten?.()
 })
 
 async function toggleClipboard() {

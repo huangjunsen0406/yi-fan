@@ -30,4 +30,7 @@ image = "0.25"
 base64 = "0.22"
 dirs = "5"
 selection = "1.2.0"
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-sql = { version = "2", features = ["sqlite"] }
+lingua = { version = "1.6", default-features = false, features = ["chinese", "english", "japanese", "korean", "french", "german", "spanish", "russian", "portuguese", "italian", "dutch", "arabic"] }
 

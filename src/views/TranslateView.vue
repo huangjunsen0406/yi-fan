@@ -27,10 +27,18 @@ const debouncedTranslate = useDebounceFn(() => {
   store.doTranslate()
 }, 600)
 
+// ── Language detection with debounce ──
+const debouncedDetect = useDebounceFn(() => {
+  store.detectInputLang()
+}, 400)
+
 // Watch input text, engine, and language changes to trigger translation
 watch(
   () => store.inputText,
-  () => debouncedTranslate()
+  () => {
+    debouncedTranslate()
+    debouncedDetect()
+  }
 )
 
 watch(

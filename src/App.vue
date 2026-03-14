@@ -2,16 +2,18 @@
 import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { listen } from '@tauri-apps/api/event'
+import { invoke } from '@tauri-apps/api/core'
 import { useTranslateStore } from './stores/translate'
+import { translate } from './services/translate'
+import { useSettingsStore } from './stores/settings'
+import { writeText } from '@tauri-apps/plugin-clipboard-manager'
+import { addHistory } from './services/history'
 
 const router = useRouter()
 const store = useTranslateStore()
 
 onMounted(async () => {
-  // 全局快捷键事件监听（App 级别，不受路由切换影响）
-  // Rust 端完成所有阻塞操作后再 emit 以下事件
-
-  // 1. 划词翻译：Rust 已获取选区文字 + 显示窗口
+  // 1. 划词翻译
   await listen<string>('selection-text', (event) => {
     const text = event.payload
     if (text) {
@@ -21,18 +23,84 @@ onMounted(async () => {
     }
   })
 
-  // 2. 截图识别完成：Rust 已 screencapture + 显示窗口，直接跳转
+  // 2. 截图识别完成
   await listen('ocr-recognize-done', () => {
     router.push('/recognize')
   })
 
-  // 3. 截图翻译完成：Rust 已 screencapture + OCR + 显示窗口，收到文字
+  // 3. 截图翻译完成
   await listen<string>('ocr-translate-done', (event) => {
     const text = event.payload
     if (text) {
       store.inputText = text
       if (store.mode === 'code') store.toggleMode()
       router.push('/')
+    }
+  })
+
+  // 4. 剪贴板监听：自动检测语言 → 中文翻译成英文，其他语言翻译成中文
+  await listen<string>('clipboard-text', async (event) => {
+    const text = event.payload
+    if (!text || !text.trim()) return
+
+    // Detect language via Rust lingua
+    let detectedLang = ''
+    try {
+      detectedLang = await invoke<string>('detect_language', { text })
+    } catch { /* ignore */ }
+
+    // Smart language switching:
+    // Chinese → translate to English
+    // Anything else → translate to Chinese
+    const isChinese = detectedLang === '简体中文' || detectedLang === '繁体中文'
+    const sourceLang = detectedLang || '自动检测'
+    const targetLang = isChinese ? '英语' : '简体中文'
+
+    // Update store UI
+    store.inputText = text.trim()
+    store.sourceLang = sourceLang
+    store.targetLang = targetLang
+    store.detectedLang = detectedLang
+    if (store.mode === 'code') store.toggleMode()
+    router.push('/')
+
+    // Auto-translate with the first enabled engine
+    const settings = useSettingsStore()
+    await settings.init()
+    const engineName = store.activeEngine
+    const config = settings.getConfig(engineName)
+
+    try {
+      store.loading = true
+      store.error = ''
+      const result = await translate(engineName, text.trim(), sourceLang, targetLang, config)
+      store.outputText = result
+
+      // Auto-copy the result, and tell Rust to skip it
+      if (result) {
+        try {
+          await invoke('clipboard_skip_next', { text: result })
+          await writeText(result)
+          console.log('[clipboard] Auto-copied result to clipboard:', result.slice(0, 50))
+        } catch (e) {
+          console.error('[clipboard] Auto-copy failed:', e)
+        }
+
+        // Save to history
+        try {
+          await addHistory({
+            source_text: text.trim(),
+            result_text: result,
+            engine: engineName,
+            source_lang: sourceLang,
+            target_lang: targetLang,
+          })
+        } catch { /* ignore */ }
+      }
+    } catch (err: any) {
+      store.error = err.message || '翻译失败'
+    } finally {
+      store.loading = false
     }
   })
 })

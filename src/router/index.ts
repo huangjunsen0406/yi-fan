@@ -28,6 +28,11 @@ const routes: RouteRecordRaw[] = [
     name: 'Recognize',
     component: () => import('../views/RecognizeView.vue'),
   },
+  {
+    path: '/history',
+    name: 'History',
+    component: () => import('../views/HistoryView.vue'),
+  },
 ]
 
 const router = createRouter({

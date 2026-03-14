@@ -1,6 +1,8 @@
 use tauri::Emitter;
 use tauri::Manager;
 
+mod clipboard;
+mod lang_detect;
 mod screenshot;
 
 #[tauri::command]
@@ -123,6 +125,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_store::Builder::default().build())
+        .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_sql::Builder::default().build())
         .setup(|app| {
             #[cfg(desktop)]
             {
@@ -198,6 +202,10 @@ pub fn run() {
             screenshot::system_ocr,
             screenshot::screencapture_select,
             screenshot::get_selected_text,
+            clipboard::start_clipboard_monitor,
+            clipboard::stop_clipboard_monitor,
+            clipboard::clipboard_skip_next,
+            lang_detect::detect_language,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

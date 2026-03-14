@@ -8,6 +8,10 @@ const store = useTranslateStore()
 function goToSettings() {
   router.push('/settings')
 }
+
+function goToHistory() {
+  router.push('/history')
+}
 </script>
 
 <template>
@@ -20,6 +24,10 @@ function goToSettings() {
       <i v-if="store.mode === 'translate'" class="ph ph-arrows-left-right"></i>
       <i v-else class="ph ph-code"></i>
     </button>
+    <div class="footer-spacer"></div>
+    <button class="footer-btn" title="翻译历史" @click="goToHistory">
+      <i class="ph ph-clock-counter-clockwise"></i>
+    </button>
     <button class="footer-btn settings-btn" title="设置" @click="goToSettings">
       <i class="ph ph-gear"></i>
     </button>
@@ -30,9 +38,13 @@ function goToSettings() {
 .app-footer {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 4px;
   padding-top: 4px;
   flex-shrink: 0;
+}
+
+.footer-spacer {
+  flex: 1;
 }
 
 .footer-btn {

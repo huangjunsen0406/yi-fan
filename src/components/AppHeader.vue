@@ -1,9 +1,48 @@
 <script setup lang="ts">
+import { ref, onMounted } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
+import { useSettingsStore } from '../stores/settings'
+
+const settings = useSettingsStore()
+const clipboardActive = ref(false)
+
+onMounted(async () => {
+  await settings.init()
+  const saved = settings.getConfig('_clipboard')['enabled']
+  if (saved === 'true') {
+    clipboardActive.value = true
+    try { await invoke('start_clipboard_monitor') } catch { /* ignore */ }
+  }
+})
+
+async function toggleClipboard() {
+  clipboardActive.value = !clipboardActive.value
+  try {
+    if (clipboardActive.value) {
+      await invoke('start_clipboard_monitor')
+    } else {
+      await invoke('stop_clipboard_monitor')
+    }
+    settings.setConfig('_clipboard', 'enabled', String(clipboardActive.value))
+    await settings.save()
+  } catch (e) {
+    console.error('Clipboard monitor toggle failed:', e)
+    clipboardActive.value = !clipboardActive.value
+  }
+}
 </script>
 
 <template>
   <header class="app-header">
-    <div class="header-logo">
+    <div class="header-left">
+      <button
+        class="clipboard-btn"
+        :class="{ active: clipboardActive }"
+        @click="toggleClipboard"
+        :title="clipboardActive ? '关闭剪贴板监听' : '开启剪贴板监听'"
+      >
+        <i class="ph ph-clipboard-text"></i>
+      </button>
     </div>
     <div class="header-icon">
       <svg width="32" height="32" viewBox="0 0 36 36" fill="none">
@@ -26,24 +65,47 @@
   flex-shrink: 0;
 }
 
-.header-logo {
+.header-left {
   display: flex;
   align-items: center;
-}
-
-.logo-text {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--color-text);
-  background: var(--color-bg-page);
-  padding: 6px 14px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--color-border);
-  letter-spacing: 0.5px;
 }
 
 .header-icon {
   display: flex;
   align-items: center;
+}
+
+.clipboard-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  border: 1.5px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 18px;
+}
+
+.clipboard-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: var(--color-primary-bg);
+}
+
+.clipboard-btn.active {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: #fff;
+  box-shadow: 0 0 8px rgba(79, 110, 247, 0.35);
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 8px rgba(79, 110, 247, 0.35); }
+  50% { box-shadow: 0 0 14px rgba(79, 110, 247, 0.55); }
 }
 </style>

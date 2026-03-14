@@ -5,6 +5,7 @@ import { speak, stopTTS } from '../services/tts'
 
 const store = useTranslateStore()
 const speaking = ref(false)
+const justCopied = ref(false)
 
 async function handleSpeak() {
   if (speaking.value) {
@@ -21,6 +22,13 @@ async function handleSpeak() {
   } finally {
     speaking.value = false
   }
+}
+
+async function handleCopy() {
+  if (!store.outputText.trim()) return
+  await store.copyToClipboard(store.outputText)
+  justCopied.value = true
+  setTimeout(() => { justCopied.value = false }, 1500)
 }
 </script>
 
@@ -40,7 +48,24 @@ async function handleSpeak() {
       <span class="error-text">{{ store.error }}</span>
     </div>
 
-    <!-- Normal output -->
+    <!-- Multi-engine results -->
+    <div v-else-if="store.multiEngineMode && store.multiEngineResults.length > 0" class="output-content multi-results">
+      <div
+        v-for="result in store.multiEngineResults"
+        :key="result.engine"
+        class="engine-result"
+        :class="{ 'has-error': result.error }"
+      >
+        <div class="engine-result-header">
+          <span class="engine-label">{{ result.label }}</span>
+          <div v-if="result.loading" class="mini-loading"></div>
+          <span v-if="result.error" class="engine-error">{{ result.error }}</span>
+        </div>
+        <p v-if="result.text" class="engine-result-text">{{ result.text }}</p>
+      </div>
+    </div>
+
+    <!-- Normal single output -->
     <div v-else class="output-content" :class="{ 'code-mode': store.mode === 'code' }">
       <p class="output-text">{{ store.outputText }}</p>
       <div v-if="store.mode === 'code'" class="code-watermark">
@@ -57,6 +82,39 @@ async function handleSpeak() {
         @click="handleSpeak"
       >
         <i class="ph" :class="speaking ? 'ph-stop-circle' : 'ph-speaker-high'"></i>
+      </button>
+      <button
+        class="icon-btn"
+        :class="{ 'copied': justCopied }"
+        :title="justCopied ? '已复制' : '复制译文'"
+        :disabled="!store.outputText.trim()"
+        @click="handleCopy"
+      >
+        <i class="ph" :class="justCopied ? 'ph-check' : 'ph-copy'"></i>
+      </button>
+
+      <div class="spacer"></div>
+
+      <!-- Auto-copy toggle -->
+      <button
+        class="icon-btn auto-copy-btn"
+        :class="{ active: store.autoCopy }"
+        :title="store.autoCopy ? '自动复制: 开' : '自动复制: 关'"
+        @click="store.toggleAutoCopy()"
+      >
+        <i class="ph ph-clipboard-text"></i>
+        <span class="auto-label">自动</span>
+      </button>
+
+      <!-- Multi-engine toggle -->
+      <button
+        class="icon-btn multi-btn"
+        :class="{ active: store.multiEngineMode }"
+        :title="store.multiEngineMode ? '多引擎: 开' : '多引擎: 关'"
+        @click="store.toggleMultiEngine()"
+      >
+        <i class="ph ph-stack"></i>
+        <span class="auto-label">并行</span>
       </button>
     </div>
   </section>
@@ -112,6 +170,68 @@ async function handleSpeak() {
   pointer-events: none;
   white-space: nowrap;
   user-select: none;
+}
+
+/* Multi-engine results */
+.multi-results {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.engine-result {
+  padding: 10px 12px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  transition: border-color 0.2s;
+}
+
+.engine-result:hover {
+  border-color: var(--color-primary-border);
+}
+
+.engine-result.has-error {
+  opacity: 0.6;
+}
+
+.engine-result-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.engine-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--color-primary);
+}
+
+.engine-error {
+  font-size: 11px;
+  color: #F53F3F;
+}
+
+.engine-result-text {
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+  color: var(--color-text);
+}
+
+.mini-loading {
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 /* Loading state */
@@ -173,8 +293,11 @@ async function handleSpeak() {
   display: flex;
   align-items: center;
   padding-top: 8px;
+  gap: 4px;
   flex-shrink: 0;
 }
+
+.spacer { flex: 1; }
 
 .icon-btn {
   display: flex;
@@ -191,5 +314,29 @@ async function handleSpeak() {
 .icon-btn:hover {
   background: var(--color-bg-hover);
   color: var(--color-text);
+}
+
+.icon-btn.copied {
+  color: #00B42A;
+}
+
+.auto-copy-btn, .multi-btn {
+  width: auto;
+  padding: 2px 8px;
+  gap: 3px;
+  font-size: 14px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+}
+
+.auto-copy-btn.active, .multi-btn.active {
+  color: var(--color-primary);
+  border-color: var(--color-primary-border);
+  background: var(--color-primary-bg);
+}
+
+.auto-label {
+  font-size: 11px;
+  font-weight: 500;
 }
 </style>

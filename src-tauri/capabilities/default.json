@@ -1,0 +1,44 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capability for the main window",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "opener:default",
+    "store:default",
+    {
+      "identifier": "http:default",
+      "allow": [
+        { "url": "https://translate.googleapis.com/**" },
+        { "url": "https://translate.google.com/**" },
+        { "url": "https://transmart.qq.com/**" },
+        { "url": "https://yi.qq.com/**" },
+        { "url": "https://www2.deepl.com/**" },
+        { "url": "https://api-free.deepl.com/**" },
+        { "url": "https://api.deepl.com/**" },
+        { "url": "https://api.deepl-pro.com/**" },
+        { "url": "https://edge.microsoft.com/**" },
+        { "url": "https://api-edge.cognitive.microsofttranslator.com/**" },
+        { "url": "https://translate.yandex.net/**" },
+        { "url": "https://api.openai.com/**" },
+        { "url": "https://mt.cn-hangzhou.aliyuncs.com/**" },
+        { "url": "http://mt.cn-hangzhou.aliyuncs.com/**" },
+        { "url": "https://tmt.tencentcloudapi.com/**" },
+        { "url": "https://open.volcengineapi.com/**" },
+        { "url": "https://api.niutrans.com/**" },
+        { "url": "https://fanyi-api.baidu.com/**" },
+        { "url": "https://openapi.youdao.com/**" },
+        { "url": "https://api.interpreter.caiyunai.com/**" },
+        { "url": "https://open.bigmodel.cn/**" },
+        { "url": "https://generativelanguage.googleapis.com/**" },
+        { "url": "https://lingva.pot-app.com/**" },
+        { "url": "https://www.bing.com/**" },
+        { "url": "https://dictionary.cambridge.org/**" },
+        { "url": "https://pot-app.com/**" },
+        { "url": "http://localhost:**" },
+        { "url": "http://127.0.0.1:**" }
+      ]
+    }
+  ]
+}

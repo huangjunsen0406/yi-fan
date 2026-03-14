@@ -11,12 +11,12 @@ const routes: RouteRecordRaw[] = [
         name: 'Translate',
         component: () => import('../views/TranslateView.vue'),
       },
-      {
-        path: 'settings',
-        name: 'Settings',
-        component: () => import('../views/SettingsView.vue'),
-      },
     ],
+  },
+  {
+    path: '/settings',
+    name: 'Settings',
+    component: () => import('../views/SettingsView.vue'),
   },
 ]
 

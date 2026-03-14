@@ -34,6 +34,12 @@ export const useTranslateStore = defineStore('translate', () => {
   type AutoCopyMode = 'disable' | 'source' | 'target' | 'source_target'
   const autoCopyMode = ref<AutoCopyMode>('disable')
 
+  // ── Dynamic translate (auto-translate on input with debounce) ──
+  const dynamicTranslate = ref(false)
+
+  // ── Window always on top ──
+  const alwaysOnTop = ref(false)
+
   // 从 settings 加载用户设置的默认语言
   async function initDefaults() {
     const settings = useSettingsStore()
@@ -79,14 +85,18 @@ export const useTranslateStore = defineStore('translate', () => {
     }
   }
 
-  // ── Auto-copy helper ──
+  // ── Clipboard copy helper (pauses monitor to avoid re-triggering) ──
   async function copyToClipboard(text: string) {
     if (!text.trim()) return
     try {
+      await invoke('pause_clipboard_monitor_temp')
+      await invoke('clipboard_skip_next', { text })
       await writeText(text)
     } catch {
       // fallback
       try { await navigator.clipboard.writeText(text) } catch { /* ignore */ }
+    } finally {
+      try { await invoke('resume_clipboard_monitor_temp') } catch { /* ignore */ }
     }
   }
 
@@ -267,7 +277,7 @@ export const useTranslateStore = defineStore('translate', () => {
     }
   }
 
-  // Auto-copy handler: copies based on current mode, pauses clipboard monitor to avoid conflict
+  // Auto-copy handler: copies based on current mode
   async function handleAutoCopy(source: string, target: string) {
     let textToCopy = ''
     switch (autoCopyMode.value) {
@@ -283,16 +293,8 @@ export const useTranslateStore = defineStore('translate', () => {
       default:
         return
     }
-    if (!textToCopy.trim()) return
-
-    try {
-      // Pause monitor → skip next → write → resume
-      await invoke('pause_clipboard_monitor_temp')
-      await invoke('clipboard_skip_next', { text: textToCopy })
-      await copyToClipboard(textToCopy)
-    } catch { /* ignore */ } finally {
-      try { await invoke('resume_clipboard_monitor_temp') } catch { /* ignore */ }
-    }
+    // copyToClipboard already handles pause/resume of clipboard monitor
+    await copyToClipboard(textToCopy)
   }
 
   // Cycle auto-copy mode: disable → target → source → source_target → disable
@@ -313,6 +315,46 @@ export const useTranslateStore = defineStore('translate', () => {
     await settings.save()
   }
 
+  // ── Reverse translate: swap source/target, translate outputText back ──
+  async function reverseTranslate() {
+    if (!outputText.value.trim()) return
+    const oldOutput = outputText.value
+    const oldSource = sourceLang.value
+    const oldTarget = targetLang.value
+
+    // Swap
+    inputText.value = oldOutput
+    sourceLang.value = oldTarget === '自动检测' ? oldTarget : oldTarget
+    targetLang.value = oldSource === '自动检测' ? '简体中文' : oldSource
+
+    await doTranslate()
+  }
+
+  // ── Delete newlines: clean up PDF-copied text ──
+  function deleteNewlines() {
+    if (!inputText.value.trim()) return
+    inputText.value = inputText.value
+      .replace(/-\s*\n/g, '')     // hyphenated line breaks
+      .replace(/\n+/g, ' ')       // newlines → space
+      .replace(/\s{2,}/g, ' ')    // collapse multiple spaces
+      .trim()
+  }
+
+  // ── Toggle dynamic translate ──
+  async function toggleDynamicTranslate() {
+    dynamicTranslate.value = !dynamicTranslate.value
+    const settings = useSettingsStore()
+    settings.setConfig('_translate', 'dynamicTranslate', String(dynamicTranslate.value))
+    await settings.save()
+  }
+
+  // ── Toggle always on top ──
+  async function toggleAlwaysOnTop() {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window')
+    alwaysOnTop.value = !alwaysOnTop.value
+    await getCurrentWindow().setAlwaysOnTop(alwaysOnTop.value)
+  }
+
   return {
     mode,
     inputText,
@@ -327,6 +369,8 @@ export const useTranslateStore = defineStore('translate', () => {
     multiEngineResults,
     multiEngineMode,
     autoCopyMode,
+    dynamicTranslate,
+    alwaysOnTop,
     toggleMode,
     clearInput,
     doTranslate,
@@ -337,5 +381,9 @@ export const useTranslateStore = defineStore('translate', () => {
     handleAutoCopy,
     cycleAutoCopyMode,
     toggleMultiEngine,
+    reverseTranslate,
+    deleteNewlines,
+    toggleDynamicTranslate,
+    toggleAlwaysOnTop,
   }
 })

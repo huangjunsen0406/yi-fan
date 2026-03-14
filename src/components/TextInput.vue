@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { speak, stopTTS } from '../services/tts'
+import { useTranslateStore } from '../stores/translate'
+
+const store = useTranslateStore()
 
 const props = defineProps<{
   modelValue: string
@@ -32,6 +35,19 @@ async function handleSpeak() {
     speaking.value = false
   }
 }
+
+function handleDeleteNewlines() {
+  store.deleteNewlines()
+  emit('update:modelValue', store.inputText)
+}
+
+function handleKeydown(e: KeyboardEvent) {
+  // Enter = translate, Shift+Enter = newline
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault()
+    store.doTranslate()
+  }
+}
 </script>
 
 <template>
@@ -39,8 +55,9 @@ async function handleSpeak() {
     <textarea
       :value="modelValue"
       class="text-area"
-      :placeholder="mode === 'translate' ? '请输入要翻译的文本...' : '请输入要转换的文本...'"
+      :placeholder="mode === 'translate' ? '请输入要翻译的文本... (Enter 翻译, Shift+Enter 换行)' : '请输入要转换的文本...'"
       @input="emit('update:modelValue', ($event.target as HTMLTextAreaElement).value)"
+      @keydown="handleKeydown"
     ></textarea>
     <div class="input-footer">
       <button
@@ -52,10 +69,26 @@ async function handleSpeak() {
       >
         <i class="ph" :class="speaking ? 'ph-stop-circle' : 'ph-speaker-high'"></i>
       </button>
+      <button
+        class="icon-btn"
+        title="删除换行（清理PDF文本）"
+        :disabled="!modelValue.trim()"
+        @click="handleDeleteNewlines"
+      >
+        <i class="ph ph-text-align-justify"></i>
+      </button>
       <span v-if="detectedLang" class="detected-lang">
         检测到: {{ detectedLang }}
       </span>
       <div class="spacer"></div>
+      <button
+        class="icon-btn translate-btn"
+        title="翻译 (Enter)"
+        :disabled="!modelValue.trim()"
+        @click="store.doTranslate()"
+      >
+        <i class="ph ph-translate"></i>
+      </button>
       <button v-if="modelValue" class="icon-btn clear-btn" title="清除" @click="emit('clear')">
         <i class="ph ph-x"></i>
       </button>

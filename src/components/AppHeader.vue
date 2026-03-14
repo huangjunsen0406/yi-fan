@@ -3,8 +3,10 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { useSettingsStore } from '../stores/settings'
+import { useTranslateStore } from '../stores/translate'
 
 const settings = useSettingsStore()
+const translateStore = useTranslateStore()
 const clipboardActive = ref(false)
 let unlisten: UnlistenFn | null = null
 
@@ -64,6 +66,16 @@ async function toggleClipboard() {
         <text x="22" y="34" font-size="15" font-weight="700" fill="#4F6EF7" font-family="sans-serif">A</text>
       </svg>
     </div>
+    <div class="header-right">
+      <button
+        class="pin-btn"
+        :class="{ active: translateStore.alwaysOnTop }"
+        @click="translateStore.toggleAlwaysOnTop()"
+        :title="translateStore.alwaysOnTop ? '取消置顶' : '窗口置顶'"
+      >
+        <i class="ph" :class="translateStore.alwaysOnTop ? 'ph-push-pin-simple-slash' : 'ph-push-pin-simple'"></i>
+      </button>
+    </div>
   </header>
 </template>
 
@@ -118,5 +130,36 @@ async function toggleClipboard() {
 @keyframes pulse-glow {
   0%, 100% { box-shadow: 0 0 8px rgba(79, 110, 247, 0.35); }
   50% { box-shadow: 0 0 14px rgba(79, 110, 247, 0.55); }
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+}
+
+.pin-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 17px;
+  opacity: 0.6;
+}
+
+.pin-btn:hover {
+  color: var(--color-primary);
+  opacity: 1;
+}
+
+.pin-btn.active {
+  color: var(--color-primary);
+  opacity: 1;
 }
 </style>

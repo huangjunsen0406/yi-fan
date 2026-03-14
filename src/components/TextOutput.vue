@@ -69,10 +69,16 @@ async function handleCopy() {
       <span class="loading-text">翻译中...</span>
     </div>
 
-    <!-- Error message -->
+    <!-- Error message with retry -->
     <div v-else-if="store.error" class="output-content error-state">
-      <i class="ph ph-warning-circle error-icon"></i>
-      <span class="error-text">{{ store.error }}</span>
+      <div class="error-body">
+        <i class="ph ph-warning-circle error-icon"></i>
+        <span class="error-text">{{ store.error }}</span>
+      </div>
+      <button class="retry-btn" @click="store.doTranslate()" title="重试">
+        <i class="ph ph-arrow-clockwise"></i>
+        <span>重试</span>
+      </button>
     </div>
 
     <!-- Multi-engine results -->
@@ -126,6 +132,14 @@ async function handleCopy() {
       >
         <i class="ph" :class="justCopied ? 'ph-check' : 'ph-copy'"></i>
       </button>
+      <button
+        class="icon-btn"
+        title="反向翻译"
+        :disabled="!store.outputText.trim()"
+        @click="store.reverseTranslate()"
+      >
+        <i class="ph ph-swap"></i>
+      </button>
 
       <div class="spacer"></div>
 
@@ -138,6 +152,17 @@ async function handleCopy() {
       >
         <i class="ph" :class="autoCopyIcon"></i>
         <span class="auto-label">{{ autoCopyLabel }}</span>
+      </button>
+
+      <!-- Dynamic translate toggle -->
+      <button
+        class="icon-btn auto-copy-btn"
+        :class="{ active: store.dynamicTranslate }"
+        :title="store.dynamicTranslate ? '动态翻译: 开' : '动态翻译: 关'"
+        @click="store.toggleDynamicTranslate()"
+      >
+        <i class="ph ph-lightning"></i>
+        <span class="auto-label">动态</span>
       </button>
 
       <!-- Multi-engine toggle -->
@@ -165,6 +190,39 @@ async function handleCopy() {
   border-radius: var(--radius-lg);
   padding: 14px 16px 8px;
   background: var(--color-bg-page);
+}
+
+.error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.error-body {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.retry-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--color-primary);
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.15s;
+}
+
+.retry-btn:hover {
+  background: var(--color-primary);
+  color: #fff;
+  border-color: var(--color-primary);
 }
 
 .output-content {

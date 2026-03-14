@@ -32,12 +32,14 @@ const debouncedDetect = useDebounceFn(() => {
   store.detectInputLang()
 }, 400)
 
-// Watch input text, engine, and language changes to trigger translation
+// Watch input text changes: always detect language, only auto-translate when dynamic mode is on
 watch(
   () => store.inputText,
   () => {
-    debouncedTranslate()
     debouncedDetect()
+    if (store.dynamicTranslate) {
+      debouncedTranslate()
+    }
   }
 )
 

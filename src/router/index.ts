@@ -18,6 +18,16 @@ const routes: RouteRecordRaw[] = [
     name: 'Settings',
     component: () => import('../views/SettingsView.vue'),
   },
+  {
+    path: '/screenshot',
+    name: 'Screenshot',
+    component: () => import('../views/ScreenshotView.vue'),
+  },
+  {
+    path: '/recognize',
+    name: 'Recognize',
+    component: () => import('../views/RecognizeView.vue'),
+  },
 ]
 
 const router = createRouter({

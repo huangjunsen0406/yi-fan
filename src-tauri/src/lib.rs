@@ -1,6 +1,8 @@
+use tauri::Emitter;
 use tauri::Manager;
 
-// Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+mod screenshot;
+
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
@@ -19,6 +21,102 @@ fn toggle_window(app: tauri::AppHandle) {
     }
 }
 
+/// Helper: show window and set focus
+fn show_main(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+/// Helper: hide window
+fn hide_main(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.hide();
+    }
+}
+
+/// Selection translate: get selected text → show window → emit text
+fn do_selection_translate(app: tauri::AppHandle) {
+    // get_selected_text() simulates Cmd+C → reads clipboard
+    // Must run while the OTHER app still has focus
+    match screenshot::get_selected_text() {
+        Ok(text) => {
+            show_main(&app);
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.emit("selection-text", text);
+            }
+        }
+        Err(e) => {
+            eprintln!("get_selected_text failed: {}", e);
+            show_main(&app);
+        }
+    }
+}
+
+/// OCR recognize: hide window → screencapture → show window → emit navigate
+fn do_ocr_recognize(app: tauri::AppHandle) {
+    hide_main(&app);
+    // Small delay to let the window fully hide
+    std::thread::sleep(std::time::Duration::from_millis(200));
+
+    match screenshot::screencapture_select() {
+        Ok(true) => {
+            show_main(&app);
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.emit("ocr-recognize-done", "");
+            }
+        }
+        _ => {
+            // User cancelled or error — show window back
+            show_main(&app);
+        }
+    }
+}
+
+/// OCR translate: hide → screencapture → OCR → show → emit text
+fn do_ocr_translate(app: tauri::AppHandle) {
+    hide_main(&app);
+    std::thread::sleep(std::time::Duration::from_millis(200));
+
+    match screenshot::screencapture_select() {
+        Ok(true) => {
+            // Run OCR
+            match screenshot::system_ocr("auto".to_string()) {
+                Ok(text) => {
+                    show_main(&app);
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.emit("ocr-translate-done", text);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("OCR failed: {}", e);
+                    show_main(&app);
+                }
+            }
+        }
+        _ => {
+            show_main(&app);
+        }
+    }
+}
+
+// Tauri commands (for invoke from frontend)
+#[tauri::command]
+fn selection_translate(app: tauri::AppHandle) {
+    do_selection_translate(app);
+}
+
+#[tauri::command]
+fn ocr_recognize(app: tauri::AppHandle) {
+    do_ocr_recognize(app);
+}
+
+#[tauri::command]
+fn ocr_translate(app: tauri::AppHandle) {
+    do_ocr_translate(app);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -32,16 +130,22 @@ pub fn run() {
                     Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState,
                 };
 
-                // Alt+Space → 唤出/隐藏翻译窗口
-                let toggle_shortcut = Shortcut::new(Some(Modifiers::ALT), Code::Space);
+                let shortcut_toggle = Shortcut::new(Some(Modifiers::ALT), Code::Space);
+                let shortcut_selection = Shortcut::new(Some(Modifiers::ALT), Code::KeyD);
+                let shortcut_ocr_recognize = Shortcut::new(Some(Modifiers::ALT), Code::KeyS);
+                let shortcut_ocr_translate =
+                    Shortcut::new(Some(Modifiers::ALT | Modifiers::SHIFT), Code::KeyS);
 
-                let toggle_shortcut_clone = toggle_shortcut;
+                let s_toggle = shortcut_toggle;
+                let s_selection = shortcut_selection;
+                let s_ocr_rec = shortcut_ocr_recognize;
+                let s_ocr_trans = shortcut_ocr_translate;
 
                 app.handle().plugin(
                     tauri_plugin_global_shortcut::Builder::new()
                         .with_handler(move |app, shortcut, event| {
                             if event.state() == ShortcutState::Pressed {
-                                if shortcut == &toggle_shortcut_clone {
+                                if shortcut == &s_toggle {
                                     if let Some(window) = app.get_webview_window("main") {
                                         if window.is_visible().unwrap_or(false) {
                                             let _ = window.hide();
@@ -50,20 +154,51 @@ pub fn run() {
                                             let _ = window.set_focus();
                                         }
                                     }
+                                } else if shortcut == &s_selection {
+                                    // All blocking work in a thread
+                                    let app = app.clone();
+                                    std::thread::spawn(move || {
+                                        do_selection_translate(app);
+                                    });
+                                } else if shortcut == &s_ocr_rec {
+                                    let app = app.clone();
+                                    std::thread::spawn(move || {
+                                        do_ocr_recognize(app);
+                                    });
+                                } else if shortcut == &s_ocr_trans {
+                                    let app = app.clone();
+                                    std::thread::spawn(move || {
+                                        do_ocr_translate(app);
+                                    });
                                 }
                             }
                         })
                         .build(),
                 )?;
 
-                // Register the shortcut
-                app.global_shortcut().register(toggle_shortcut)?;
+                let gs = app.global_shortcut();
+                gs.register(shortcut_toggle)?;
+                gs.register(shortcut_selection)?;
+                gs.register(shortcut_ocr_recognize)?;
+                gs.register(shortcut_ocr_translate)?;
 
-                println!("Registered global shortcut: Alt+Space");
+                println!("Registered global shortcuts: Alt+Space, Alt+D, Alt+S, Alt+Shift+S");
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![greet, toggle_window])
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            toggle_window,
+            selection_translate,
+            ocr_recognize,
+            ocr_translate,
+            screenshot::screenshot,
+            screenshot::cut_image,
+            screenshot::get_base64,
+            screenshot::system_ocr,
+            screenshot::screencapture_select,
+            screenshot::get_selected_text,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

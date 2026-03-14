@@ -3,7 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSettingsStore } from '../stores/settings'
 import { providers, getProvider } from '../services/translate'
-import { register, unregister, isRegistered } from '@tauri-apps/plugin-global-shortcut'
+import { register, unregister, unregisterAll, isRegistered } from '@tauri-apps/plugin-global-shortcut'
 
 const router = useRouter()
 const settings = useSettingsStore()
@@ -47,9 +47,21 @@ function saveDefaultLangs() {
 }
 
 // ── 快捷键 ──
-const hotkeyToggle = ref('Alt+Space')
-const hotkeyRecording = ref(false)
-const hotkeyStatus = ref<{ type: 'idle' | 'success' | 'error'; message: string }>({ type: 'idle', message: '' })
+interface HotkeyItem {
+  id: string
+  label: string
+  command: string  // Tauri command name
+  value: string
+  status: { type: 'idle' | 'success' | 'error'; message: string }
+}
+
+const hotkeys = ref<HotkeyItem[]>([
+  { id: 'toggle',      label: '唤出/隐藏窗口',  command: 'toggle_window',      value: 'Alt+Space',   status: { type: 'idle', message: '' } },
+  { id: 'selection',   label: '划词翻译',       command: 'selection_translate', value: 'Alt+D',       status: { type: 'idle', message: '' } },
+  { id: 'ocr_recognize', label: '截图识别(OCR)', command: 'ocr_recognize',      value: 'Alt+S',       status: { type: 'idle', message: '' } },
+  { id: 'ocr_translate', label: '截图翻译',     command: 'ocr_translate',      value: 'Alt+Shift+S', status: { type: 'idle', message: '' } },
+])
+const activeHotkeyIdx = ref(-1)
 
 const keyMap: Record<string, string> = {
   Backquote: '`', Backslash: '\\', BracketLeft: '[', BracketRight: ']',
@@ -59,10 +71,20 @@ const keyMap: Record<string, string> = {
   ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right',
 }
 
-function onHotkeyKeyDown(e: KeyboardEvent) {
+// 聚焦快捷键输入框时，取消注册所有全局快捷键（避免录入时触发动作）
+async function onHotkeyFocus(idx: number) {
+  activeHotkeyIdx.value = idx
+  try { await unregisterAll() } catch { /* ignore */ }
+}
+
+function onHotkeyBlur() {
+  activeHotkeyIdx.value = -1
+}
+
+function onHotkeyKeyDown(e: KeyboardEvent, idx: number) {
   e.preventDefault()
   e.stopPropagation()
-  if (e.code === 'Backspace') { hotkeyToggle.value = ''; return }
+  if (e.code === 'Backspace') { hotkeys.value[idx].value = ''; return }
   let combo = ''
   if (e.ctrlKey) combo = 'Control'
   if (e.shiftKey) combo = `${combo}${combo ? '+' : ''}Shift`
@@ -77,24 +99,25 @@ function onHotkeyKeyDown(e: KeyboardEvent) {
   else if (keyMap[code] !== undefined) code = keyMap[code]
   else if (['ShiftLeft','ShiftRight','ControlLeft','ControlRight','AltLeft','AltRight','MetaLeft','MetaRight'].includes(code)) code = ''
   else code = ''
-  hotkeyToggle.value = `${combo}${combo && code ? '+' : ''}${code}`
+  hotkeys.value[idx].value = `${combo}${combo && code ? '+' : ''}${code}`
 }
 
-async function registerHotkey() {
-  const key = hotkeyToggle.value
-  if (!key) { hotkeyStatus.value = { type: 'error', message: '请先录入快捷键' }; return }
+async function registerHotkey(idx: number) {
+  const item = hotkeys.value[idx]
+  const key = item.value
+  if (!key) { item.status = { type: 'error', message: '请先录入快捷键' }; return }
   try {
     const already = await isRegistered(key)
     if (already) await unregister(key)
     await register(key, (event) => {
       if (event.state === 'Pressed') {
-        import('@tauri-apps/api/core').then(({ invoke }) => invoke('toggle_window'))
+        import('@tauri-apps/api/core').then(({ invoke }) => invoke(item.command))
       }
     })
-    hotkeyStatus.value = { type: 'success', message: `✓ 已注册 ${key}` }
-    settings.setConfig('_hotkeys', 'toggle', key)
+    item.status = { type: 'success', message: `✓ 已注册 ${key}` }
+    settings.setConfig('_hotkeys', item.id, key)
   } catch (err: any) {
-    hotkeyStatus.value = { type: 'error', message: err.message || '注册失败' }
+    item.status = { type: 'error', message: err.message || '注册失败' }
   }
 }
 
@@ -130,8 +153,11 @@ const currentProvider = computed(() => providers.find(p => p.name === activeEngi
 
 onMounted(async () => {
   await settings.init()
-  const savedToggle = settings.getConfig('_hotkeys')['toggle']
-  if (savedToggle) hotkeyToggle.value = savedToggle
+  // 加载所有已保存的快捷键
+  const savedHotkeys = settings.getConfig('_hotkeys')
+  for (const hk of hotkeys.value) {
+    if (savedHotkeys[hk.id]) hk.value = savedHotkeys[hk.id]
+  }
   const savedSrcLang = settings.getConfig('_translate')['defaultSourceLang']
   if (savedSrcLang) defaultSourceLang.value = savedSrcLang
   const savedTgtLang = settings.getConfig('_translate')['defaultTargetLang']
@@ -186,26 +212,26 @@ onMounted(async () => {
         <div v-if="activePage === 'hotkey'" class="page-panel">
           <div class="config-card">
             <h3 class="card-title">全局快捷键</h3>
-            <div class="form-item">
-              <label>唤出/隐藏翻译窗口</label>
+            <div v-for="(hk, idx) in hotkeys" :key="hk.id" class="form-item">
+              <label>{{ hk.label }}</label>
               <div class="hotkey-input-row">
                 <input
                   class="hotkey-input"
-                  :class="{ recording: hotkeyRecording }"
-                  :value="hotkeyToggle"
+                  :class="{ recording: activeHotkeyIdx === idx }"
+                  :value="hk.value"
                   readonly
                   placeholder="点击后按下快捷键"
-                  @focus="hotkeyRecording = true"
-                  @blur="hotkeyRecording = false"
-                  @keydown="onHotkeyKeyDown"
+                  @focus="onHotkeyFocus(idx)"
+                  @blur="onHotkeyBlur()"
+                  @keydown="(e: KeyboardEvent) => onHotkeyKeyDown(e, idx)"
                 />
-                <button class="action-btn" @click="registerHotkey">
+                <button class="action-btn" @click="registerHotkey(idx)">
                   <i class="ph ph-check"></i> 注册
                 </button>
               </div>
-            </div>
-            <div v-if="hotkeyStatus.type !== 'idle'" class="status-msg" :class="hotkeyStatus.type">
-              {{ hotkeyStatus.message }}
+              <div v-if="hk.status.type !== 'idle'" class="status-msg" :class="hk.status.type">
+                {{ hk.status.message }}
+              </div>
             </div>
           </div>
 

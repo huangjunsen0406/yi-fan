@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { useDebounceFn } from '@vueuse/core'
 import { useTranslateStore } from '../stores/translate'
 import TextInput from '../components/TextInput.vue'
@@ -8,10 +9,17 @@ import DragHandle from '../components/DragHandle.vue'
 import TextOutput from '../components/TextOutput.vue'
 import ActionBar from '../components/ActionBar.vue'
 
+const route = useRoute()
 const store = useTranslateStore()
 
 onMounted(() => {
   store.initDefaults()
+  // 从 OCR 识别页跳回时，自动填入文字
+  const ocrText = route.query.text as string | undefined
+  if (ocrText) {
+    store.inputText = ocrText
+    if (store.mode === 'code') store.toggleMode()
+  }
 })
 
 // ── Auto-translate with debounce ──

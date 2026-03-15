@@ -6,7 +6,6 @@ const langMap: Record<string, string> = {
   '英语': 'english', '日语': 'japanese', '韩语': 'korean',
   '法语': 'french', '德语': 'german', '西班牙语': 'spanish', '俄语': 'russian',
   '文言文': 'chinese-simplified',
-  '中文-简': 'chinese-simplified', '中文-繁': 'chinese-traditional',
 }
 
 export const cambridgeDict: TranslateProvider = {

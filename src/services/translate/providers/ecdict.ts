@@ -4,7 +4,6 @@ import type { TranslateProvider } from '../types'
 const langMap: Record<string, string> = {
   '自动检测': 'auto', '简体中文': 'zh', '英语': 'en',
   '日语': 'ja', '韩语': 'ko', '法语': 'fr', '德语': 'de',
-  '中文-简': 'zh',
 }
 
 export const ecdict: TranslateProvider = {

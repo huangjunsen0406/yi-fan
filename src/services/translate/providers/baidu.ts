@@ -6,7 +6,6 @@ const langMap: Record<string, string> = {
   '自动检测': 'auto', '简体中文': 'zh', '繁体中文': 'cht', '英语': 'en',
   '日语': 'jp', '韩语': 'kor', '法语': 'fra', '德语': 'de',
   '西班牙语': 'spa', '俄语': 'ru', '文言文': 'wyw',
-  '中文-简': 'zh', '中文-繁': 'cht',
 }
 
 export const baidu: TranslateProvider = {

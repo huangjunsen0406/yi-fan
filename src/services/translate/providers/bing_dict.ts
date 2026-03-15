@@ -5,7 +5,6 @@ const langMap: Record<string, string> = {
   '自动检测': 'auto', '简体中文': 'zh-cn', '繁体中文': 'zh-tw', '英语': 'en-us',
   '日语': 'ja', '韩语': 'ko', '法语': 'fr', '德语': 'de',
   '西班牙语': 'es', '俄语': 'ru', '文言文': 'zh-cn',
-  '中文-简': 'zh-cn', '中文-繁': 'zh-tw',
 }
 
 export const bingDict: TranslateProvider = {

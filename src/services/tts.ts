@@ -9,7 +9,6 @@ const langMap: Record<string, string> = {
   '自动检测': 'auto', '简体中文': 'zh', '繁体中文': 'zh_HANT', '英语': 'en',
   '日语': 'ja', '韩语': 'ko', '法语': 'fr', '德语': 'de',
   '西班牙语': 'es', '俄语': 'ru', '文言文': 'zh',
-  '中文-简': 'zh', '中文-繁': 'zh_HANT',
   '意大利语': 'it', '葡萄牙语': 'pt',
 }
 
@@ -115,8 +114,8 @@ function speakByWebSpeech(text: string, lang: string, requestId: number): Promis
 
 /**
  * 统一的朗读函数
+ * 优先 Web Speech API（本地，毫秒级），失败则回退 Lingva（网络，3-5秒）
  * @param sourceId 来源标识，如 'input' 或 'output'
- * 同一来源再次点击 → 停止；不同来源点击 → 停掉旧的，开始新的
  */
 export async function speak(text: string, lang: string, sourceId: string = 'default'): Promise<void> {
   if (!text.trim()) return
@@ -132,16 +131,20 @@ export async function speak(text: string, lang: string, sourceId: string = 'defa
   const myId = currentRequestId
   speakingSource.value = sourceId
 
+  // 优先尝试 Web Speech（本地引擎，零延迟）
   try {
-    await speakByLingva(text, lang, myId)
+    await speakByWebSpeech(text, lang, myId)
+    return
   } catch (e) {
     if (myId !== currentRequestId) return
-    console.warn('Lingva TTS 失败，使用 Web Speech 备选:', e)
-    try {
-      await speakByWebSpeech(text, lang, myId)
-    } catch {
-      if (myId === currentRequestId) speakingSource.value = ''
-    }
+    console.warn('Web Speech 不可用，回退 Lingva:', e)
+  }
+
+  // 回退 Lingva（网络请求）
+  try {
+    await speakByLingva(text, lang, myId)
+  } catch {
+    if (myId === currentRequestId) speakingSource.value = ''
   }
 }
 

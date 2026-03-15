@@ -5,7 +5,6 @@ const langMap: Record<string, string> = {
   '自动检测': '', '简体中文': 'zh-Hans', '繁体中文': 'zh-Hant', '英语': 'en',
   '日语': 'ja', '韩语': 'ko', '法语': 'fr', '德语': 'de',
   '西班牙语': 'es', '俄语': 'ru', '文言文': 'zh-Hans',
-  '中文-简': 'zh-Hans', '中文-繁': 'zh-Hant',
   '意大利语': 'it', '葡萄牙语': 'pt', '阿拉伯语': 'ar',
   '泰语': 'th', '越南语': 'vi', '印尼语': 'id',
 }

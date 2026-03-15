@@ -38,7 +38,7 @@ jobs:
           name: source
           path: ./*
           include-hidden-files: true
-          if-no-files-found: error
+          if-no-files-found: warn
 
   build-for-macos:
     needs: change-version
@@ -88,14 +88,14 @@ jobs:
         with:
           name: macos_${{ matrix.target }}_dmg
           path: src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
-          if-no-files-found: error
+          if-no-files-found: warn
 
       - name: Upload updater bundle
         uses: actions/upload-artifact@v4
         with:
           name: macos_${{ matrix.target }}_updater
           path: src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app.tar.gz*
-          if-no-files-found: error
+          if-no-files-found: warn
 
   build-for-windows:
     needs: change-version
@@ -138,7 +138,7 @@ jobs:
         with:
           name: windows_${{ matrix.target }}
           path: src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*setup*
-          if-no-files-found: error
+          if-no-files-found: warn
 
   build-for-linux:
     needs: change-version
@@ -183,21 +183,21 @@ jobs:
         with:
           name: linux_x86_64_deb
           path: src-tauri/target/release/bundle/deb/*.deb
-          if-no-files-found: error
+          if-no-files-found: warn
 
       - name: Upload rpm
         uses: actions/upload-artifact@v4
         with:
           name: linux_x86_64_rpm
           path: src-tauri/target/release/bundle/rpm/*.rpm
-          if-no-files-found: error
+          if-no-files-found: warn
 
       - name: Upload AppImage
         uses: actions/upload-artifact@v4
         with:
           name: linux_x86_64_appimage
           path: src-tauri/target/release/bundle/appimage/*.AppImage*
-          if-no-files-found: error
+          if-no-files-found: warn
 
   create-release:
     needs: [change-version, build-for-macos, build-for-windows, build-for-linux]

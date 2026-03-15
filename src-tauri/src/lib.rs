@@ -48,14 +48,13 @@ pub(crate) fn do_selection_translate(app: tauri::AppHandle) {
     // Must run while the OTHER app still has focus
     match screenshot::get_selected_text() {
         Ok(text) => {
-            show_main(&app);
+            // 静默翻译：不弹窗，只发事件，前端后台翻译 + 复制到剪贴板
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.emit("selection-text", text);
             }
         }
         Err(e) => {
             eprintln!("get_selected_text failed: {}", e);
-            show_main(&app);
         }
     }
 
@@ -139,6 +138,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_store::Builder::default().build())
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
         .setup(|app| {

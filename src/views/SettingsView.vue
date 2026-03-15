@@ -5,6 +5,7 @@ import { useSettingsStore } from '../stores/settings'
 import { providers, getProvider } from '../services/translate'
 import { ocrProviders, getOcrProvider } from '../services/ocr'
 import { register, unregister, unregisterAll, isRegistered } from '@tauri-apps/plugin-global-shortcut'
+import { enable as enableAutostart, disable as disableAutostart, isEnabled as isAutostartEnabled } from '@tauri-apps/plugin-autostart'
 
 const router = useRouter()
 const settings = useSettingsStore()
@@ -55,6 +56,7 @@ const ocrAutoCopy = ref(false)
 const ocrAutoTranslate = ref(false)
 const ocrHideWindow = ref(false)
 const ocrCloseOnBlur = ref(false)
+const autoStartEnabled = ref(false)
 const showOcrLangDrop = ref(false)
 const showOcrEngineDrop = ref(false)
 
@@ -254,9 +256,24 @@ onMounted(async () => {
     defaultOcrEngine.value = savedOcr['activeEngine']
     activeOcrEngine.value = savedOcr['activeEngine']
   }
+  // 加载开机自启状态
+  try { autoStartEnabled.value = await isAutostartEnabled() } catch { /* ignore */ }
   // 点击外部关闭下拉
   document.addEventListener('click', closeAllDropdowns)
 })
+
+async function toggleAutoStart() {
+  try {
+    if (autoStartEnabled.value) {
+      await disableAutostart()
+    } else {
+      await enableAutostart()
+    }
+    autoStartEnabled.value = await isAutostartEnabled()
+  } catch (e) {
+    console.error('Autostart toggle failed:', e)
+  }
+}
 </script>
 
 <template>
@@ -589,6 +606,16 @@ onMounted(async () => {
 
         <!-- ========== 关于页 ========== -->
         <div v-if="activePage === 'about'" class="page-panel">
+          <div class="config-card">
+            <h3 class="card-title">通用设置</h3>
+            <div class="config-row">
+              <span class="row-label">开机自启</span>
+              <button class="toggle-btn" :class="{ active: autoStartEnabled }" @click="toggleAutoStart">
+                <span class="toggle-knob"></span>
+              </button>
+            </div>
+          </div>
+
           <div class="config-card about-card">
             <div class="about-logo">易翻</div>
             <p class="about-ver">版本 0.1.0</p>

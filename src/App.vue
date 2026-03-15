@@ -13,13 +13,60 @@ const router = useRouter()
 const store = useTranslateStore()
 
 onMounted(async () => {
-  // 1. 划词翻译
-  await listen<string>('selection-text', (event) => {
+  // 1. 划词翻译：自动检测语言 → 中文翻英文，其他翻中文 → 自动复制译文
+  await listen<string>('selection-text', async (event) => {
     const text = event.payload
-    if (text) {
-      store.inputText = text
-      if (store.mode === 'code') store.toggleMode()
-      router.push('/')
+    if (!text || !text.trim()) return
+
+    // 检测语言
+    let detectedLang = ''
+    try {
+      detectedLang = await invoke<string>('detect_language', { text })
+    } catch { /* ignore */ }
+
+    // 中文 → 英文，其他 → 中文
+    const isChinese = detectedLang === '简体中文' || detectedLang === '繁体中文'
+    const sourceLang = detectedLang || '自动检测'
+    const targetLang = isChinese ? '英语' : '简体中文'
+
+    // 更新 store（静默翻译，不弹窗）
+    store.inputText = text.trim()
+    store.sourceLang = sourceLang
+    store.targetLang = targetLang
+    store.detectedLang = detectedLang
+    if (store.mode === 'code') store.toggleMode()
+
+    // 翻译
+    const settings = useSettingsStore()
+    await settings.init()
+    const engineName = store.activeEngine
+    const config = settings.getConfig(engineName)
+
+    try {
+      store.loading = true
+      store.error = ''
+      const result = await translate(engineName, text.trim(), sourceLang, targetLang, config)
+      store.outputText = result
+
+      // 自动复制译文到剪贴板
+      if (result) {
+        await store.copyToClipboard(result)
+
+        // 保存历史
+        try {
+          await addHistory({
+            source_text: text.trim(),
+            result_text: result,
+            engine: engineName,
+            source_lang: sourceLang,
+            target_lang: targetLang,
+          })
+        } catch { /* ignore */ }
+      }
+    } catch (err: any) {
+      store.error = err.message || '翻译失败'
+    } finally {
+      store.loading = false
     }
   })
 

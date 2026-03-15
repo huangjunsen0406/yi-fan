@@ -22,6 +22,17 @@ onMounted(() => {
   }
 })
 
+// 监听 query.text 变化（历史记录「重新翻译」按钮跳转时组件已挂载，onMounted 不会重新触发）
+watch(
+  () => route.query.text,
+  (newText) => {
+    if (newText && typeof newText === 'string') {
+      store.inputText = newText
+      if (store.mode === 'code') store.toggleMode()
+    }
+  }
+)
+
 // ── Auto-translate with debounce ──
 const debouncedTranslate = useDebounceFn(() => {
   store.doTranslate()

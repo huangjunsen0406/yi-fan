@@ -10,8 +10,10 @@ import {
   exportHistory,
   type HistoryRecord,
 } from '../services/history'
+import { useTranslateStore } from '../stores/translate'
 
 const router = useRouter()
+const store = useTranslateStore()
 
 const records = ref<HistoryRecord[]>([])
 const searchKeyword = ref('')
@@ -101,14 +103,7 @@ async function handleExport() {
 }
 
 function copyText(text: string) {
-  navigator.clipboard.writeText(text).catch(() => {
-    const ta = document.createElement('textarea')
-    ta.value = text
-    document.body.appendChild(ta)
-    ta.select()
-    document.execCommand('copy')
-    document.body.removeChild(ta)
-  })
+  store.copyToClipboard(text)
 }
 
 function useAsInput(text: string) {

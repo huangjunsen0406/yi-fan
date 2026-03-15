@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   getHistory,
+  getHistoryCount,
   searchHistory,
   deleteHistory,
   clearHistory,
@@ -17,6 +18,13 @@ const searchKeyword = ref('')
 const loading = ref(true)
 const showClearConfirm = ref(false)
 
+// ── 分页 ──
+const pageSize = 10
+const currentPage = ref(1)
+const totalCount = ref(0)
+const totalPages = computed(() => Math.max(1, Math.ceil(totalCount.value / pageSize)))
+const isSearching = ref(false)
+
 onMounted(async () => {
   await loadRecords()
 })
@@ -24,7 +32,10 @@ onMounted(async () => {
 async function loadRecords() {
   loading.value = true
   try {
-    records.value = await getHistory(200)
+    totalCount.value = await getHistoryCount()
+    const offset = (currentPage.value - 1) * pageSize
+    records.value = await getHistory(pageSize, offset)
+    isSearching.value = false
   } catch (e) {
     console.warn('Load history failed:', e)
   } finally {
@@ -37,8 +48,10 @@ async function doSearch() {
   try {
     if (searchKeyword.value.trim()) {
       records.value = await searchHistory(searchKeyword.value)
+      isSearching.value = true
     } else {
-      records.value = await getHistory(200)
+      currentPage.value = 1
+      await loadRecords()
     }
   } catch (e) {
     console.warn('Search failed:', e)
@@ -47,14 +60,28 @@ async function doSearch() {
   }
 }
 
+function goToPage(page: number) {
+  if (page < 1 || page > totalPages.value) return
+  currentPage.value = page
+  loadRecords()
+}
+
 async function handleDelete(id: number) {
   await deleteHistory(id)
   records.value = records.value.filter(r => r.id !== id)
+  totalCount.value = Math.max(0, totalCount.value - 1)
+  // 当前页空了且不是第一页，回到前一页
+  if (records.value.length === 0 && currentPage.value > 1) {
+    currentPage.value--
+    await loadRecords()
+  }
 }
 
 async function handleClearAll() {
   await clearHistory()
   records.value = []
+  totalCount.value = 0
+  currentPage.value = 1
   showClearConfirm.value = false
 }
 
@@ -92,6 +119,7 @@ function goBack() {
   router.push('/')
 }
 </script>
+
 
 <template>
   <div class="history-view">
@@ -167,11 +195,24 @@ function goBack() {
       </div>
     </div>
 
-    <div v-else class="loading-state">
+    <!-- 分页（固定底部） -->
+    <div v-if="!isSearching && totalCount > pageSize" class="pagination-bar">
+      <a-pagination
+        :total="totalCount"
+        :current="currentPage"
+        :page-size="pageSize"
+        size="small"
+        :show-total="true"
+        @change="goToPage"
+      />
+    </div>
+
+    <div v-if="loading" class="loading-state">
       <div class="loading-spinner"></div>
       <span>加载中...</span>
     </div>
   </div>
+
 </template>
 
 <style scoped>
@@ -450,5 +491,16 @@ function goBack() {
 .card-btn.delete:hover {
   color: #F53F3F;
   background: #F53F3F11;
+}
+
+/* Pagination - 固定底部 */
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px;
+  flex-shrink: 0;
+  border-top: 1px solid var(--color-border-light);
+  background: var(--color-bg-page);
 }
 </style>

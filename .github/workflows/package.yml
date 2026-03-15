@@ -210,22 +210,25 @@ jobs:
           path: artifacts
 
       - name: Display structure
-        run: find artifacts -type f | head -50
+        run: find artifacts -type f | sort
 
       - name: Collect release files
         run: |
           mkdir -p release
-          # macOS DMG
-          cp artifacts/macos_*_dmg/*.dmg release/ 2>/dev/null || true
-          # macOS updater
-          cp artifacts/macos_*_updater/*.app.tar.gz* release/ 2>/dev/null || true
-          # Windows NSIS
-          cp artifacts/windows_*/*setup* release/ 2>/dev/null || true
-          # Linux
-          cp artifacts/linux_*_deb/*.deb release/ 2>/dev/null || true
-          cp artifacts/linux_*_rpm/*.rpm release/ 2>/dev/null || true
-          cp artifacts/linux_*_appimage/*.AppImage* release/ 2>/dev/null || true
-          ls -la release/
+          # Find all release-worthy files recursively
+          find artifacts -name "*.dmg" -exec cp {} release/ \;
+          find artifacts -name "*.app.tar.gz" -exec cp {} release/ \;
+          find artifacts -name "*.app.tar.gz.sig" -exec cp {} release/ \;
+          find artifacts -name "*setup*.exe" -exec cp {} release/ \;
+          find artifacts -name "*.nsis.zip" -exec cp {} release/ \;
+          find artifacts -name "*.nsis.zip.sig" -exec cp {} release/ \;
+          find artifacts -name "*.deb" -exec cp {} release/ \;
+          find artifacts -name "*.rpm" -exec cp {} release/ \;
+          find artifacts -name "*.AppImage" -exec cp {} release/ \;
+          find artifacts -name "*.AppImage.tar.gz" -exec cp {} release/ \;
+          find artifacts -name "*.AppImage.tar.gz.sig" -exec cp {} release/ \;
+          echo "=== Release files ==="
+          ls -la release/ || echo "No files found"
 
       - name: Create Release
         uses: softprops/action-gh-release@v2

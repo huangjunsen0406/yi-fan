@@ -7,7 +7,7 @@ import TextInput from '../components/TextInput.vue'
 import EngineBar from '../components/EngineBar.vue'
 import DragHandle from '../components/DragHandle.vue'
 import TextOutput from '../components/TextOutput.vue'
-import ActionBar from '../components/ActionBar.vue'
+
 
 const route = useRoute()
 const store = useTranslateStore()
@@ -103,8 +103,6 @@ function onDrag(deltaY: number) {
     <div class="output-wrapper" :style="{ flex: outputFlex }">
       <TextOutput />
     </div>
-
-    <ActionBar />
   </div>
 </template>
 

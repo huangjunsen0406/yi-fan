@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useTranslateStore } from '../stores/translate'
-import { speak, stopTTS } from '../services/tts'
+import { speak, speakingSource } from '../services/tts'
 
 const store = useTranslateStore()
-const speaking = ref(false)
 const justCopied = ref(false)
+const speaking = computed(() => speakingSource.value === 'output')
 
 const autoCopyLabel = computed(() => {
   switch (store.autoCopyMode) {
@@ -35,19 +35,11 @@ const autoCopyTitle = computed(() => {
 })
 
 async function handleSpeak() {
-  if (speaking.value) {
-    stopTTS()
-    speaking.value = false
-    return
-  }
   if (!store.outputText.trim()) return
-  speaking.value = true
   try {
-    await speak(store.outputText, store.targetLang)
+    await speak(store.outputText, store.targetLang, 'output')
   } catch (e) {
     console.warn('TTS 朗读失败:', e)
-  } finally {
-    speaking.value = false
   }
 }
 

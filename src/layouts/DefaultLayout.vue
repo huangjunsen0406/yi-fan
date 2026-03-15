@@ -1,11 +1,10 @@
 <script setup lang="ts">
-import AppHeader from '../components/AppHeader.vue'
 import AppFooter from '../components/AppFooter.vue'
 </script>
 
 <template>
   <div class="app-layout">
-    <AppHeader />
+    <div class="drag-region" data-tauri-drag-region></div>
     <main class="app-main">
       <router-view />
     </main>
@@ -18,9 +17,15 @@ import AppFooter from '../components/AppFooter.vue'
   display: flex;
   flex-direction: column;
   height: 100vh;
-  padding: 16px 20px 12px;
+  padding: 0 20px 12px;
   background: var(--color-bg);
   overflow: hidden;
+}
+
+.drag-region {
+  height: 28px;
+  flex-shrink: 0;
+  -webkit-app-region: drag;
 }
 
 .app-main {
@@ -38,3 +43,4 @@ import AppFooter from '../components/AppFooter.vue'
   min-height: 0;
 }
 </style>
+

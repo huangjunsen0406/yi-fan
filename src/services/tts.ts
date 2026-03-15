@@ -2,6 +2,7 @@
 // 使用 Lingva API（和 pot-desktop 一致），备选 Web Speech API
 
 import { fetch } from '@tauri-apps/plugin-http'
+import { ref } from 'vue'
 
 // Lingva TTS 语言映射
 const langMap: Record<string, string> = {
@@ -14,9 +15,14 @@ const langMap: Record<string, string> = {
 
 let audioCtx: AudioContext | null = null
 let currentSource: AudioBufferSourceNode | null = null
+let currentRequestId = 0  // 递增 ID，用于取消旧请求
 
-/** 停止当前播放 */
+/** 当前朗读来源：'input' | 'output' | ''（未在播放） */
+export const speakingSource = ref('')
+
+/** 停止当前播放和所有待处理请求 */
 export function stopTTS() {
+  currentRequestId++  // 使所有进行中的请求失效
   if (currentSource) {
     try {
       currentSource.stop()
@@ -24,11 +30,15 @@ export function stopTTS() {
     } catch { /* noop */ }
     currentSource = null
   }
+  // 同时停止 Web Speech
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.cancel()
+  }
+  speakingSource.value = ''
 }
 
 /** 通过 Lingva API 朗读文本 */
-export async function speakByLingva(text: string, lang: string): Promise<void> {
-  stopTTS()
+async function speakByLingva(text: string, lang: string, requestId: number): Promise<void> {
   const langCode = langMap[lang] || lang || 'en'
   const encoded = encodeURIComponent(text)
 
@@ -36,17 +46,25 @@ export async function speakByLingva(text: string, lang: string): Promise<void> {
     method: 'GET',
   })
 
+  // 请求完成后检查是否已被取消
+  if (requestId !== currentRequestId) return
+
   if (!res.ok) throw new Error(`TTS 请求失败: ${res.status}`)
 
   const data = await res.json() as any
   const audioData: number[] = data.audio
   if (!audioData || audioData.length === 0) throw new Error('TTS 返回空音频')
 
-  // 和 pot-desktop 一致：将数据转为 Uint8Array 后用 decodeAudioData 解码播放
+  // 再次检查
+  if (requestId !== currentRequestId) return
+
   if (!audioCtx) audioCtx = new AudioContext()
 
   const uint8Array = new Uint8Array(audioData)
   const audioBuffer = await audioCtx.decodeAudioData(uint8Array.buffer.slice(0))
+
+  // 播放前最后检查
+  if (requestId !== currentRequestId) return
 
   const source = audioCtx.createBufferSource()
   source.buffer = audioBuffer
@@ -57,42 +75,73 @@ export async function speakByLingva(text: string, lang: string): Promise<void> {
   return new Promise((resolve) => {
     source.onended = () => {
       source.disconnect()
-      currentSource = null
+      if (currentSource === source) {
+        currentSource = null
+        speakingSource.value = ''
+      }
       resolve()
     }
   })
 }
 
 /** 通过浏览器内置 Web Speech API 朗读（备选方案） */
-export function speakByWebSpeech(text: string, lang: string): Promise<void> {
-  stopTTS()
+function speakByWebSpeech(text: string, lang: string, requestId: number): Promise<void> {
   return new Promise((resolve, reject) => {
     if (!('speechSynthesis' in window)) {
       reject(new Error('浏览器不支持 Web Speech API'))
       return
     }
 
+    if (requestId !== currentRequestId) { resolve(); return }
+
     const langCode = langMap[lang] || lang || 'en'
     const utterance = new SpeechSynthesisUtterance(text)
     utterance.lang = langCode
     utterance.rate = 1
     utterance.pitch = 1
-    utterance.onend = () => resolve()
-    utterance.onerror = (e) => reject(new Error(`TTS 错误: ${e.error}`))
+    utterance.onend = () => {
+      if (requestId === currentRequestId) speakingSource.value = ''
+      resolve()
+    }
+    utterance.onerror = (e) => {
+      if (requestId === currentRequestId) speakingSource.value = ''
+      reject(new Error(`TTS 错误: ${e.error}`))
+    }
 
     window.speechSynthesis.cancel()
     window.speechSynthesis.speak(utterance)
   })
 }
 
-/** 统一的朗读函数 —— 先尝试 Lingva，失败则用 Web Speech */
-export async function speak(text: string, lang: string): Promise<void> {
+/**
+ * 统一的朗读函数
+ * @param sourceId 来源标识，如 'input' 或 'output'
+ * 同一来源再次点击 → 停止；不同来源点击 → 停掉旧的，开始新的
+ */
+export async function speak(text: string, lang: string, sourceId: string = 'default'): Promise<void> {
   if (!text.trim()) return
 
+  // 同一来源再次点击 → 只停止
+  if (speakingSource.value === sourceId) {
+    stopTTS()
+    return
+  }
+
+  // 停止之前的（不同来源或旧请求），开始新的
+  stopTTS()
+  const myId = currentRequestId
+  speakingSource.value = sourceId
+
   try {
-    await speakByLingva(text, lang)
+    await speakByLingva(text, lang, myId)
   } catch (e) {
+    if (myId !== currentRequestId) return
     console.warn('Lingva TTS 失败，使用 Web Speech 备选:', e)
-    await speakByWebSpeech(text, lang)
+    try {
+      await speakByWebSpeech(text, lang, myId)
+    } catch {
+      if (myId === currentRequestId) speakingSource.value = ''
+    }
   }
 }
+

@@ -137,7 +137,7 @@ onMounted(async () => {
       settings.setConfig('_clipboard', 'enabled', String(newState))
       await settings.save()
 
-      // Sync AppHeader button state
+      // Sync AppFooter clipboard button state
       const { emit } = await import('@tauri-apps/api/event')
       await emit('clipboard-monitor-state', newState)
     } catch (e) {

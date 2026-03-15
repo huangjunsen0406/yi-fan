@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { speak, stopTTS } from '../services/tts'
+import { computed } from 'vue'
+import { speak, speakingSource } from '../services/tts'
 import { useTranslateStore } from '../stores/translate'
 
 const store = useTranslateStore()
@@ -17,22 +17,14 @@ const emit = defineEmits<{
   clear: []
 }>()
 
-const speaking = ref(false)
+const speaking = computed(() => speakingSource.value === 'input')
 
 async function handleSpeak() {
-  if (speaking.value) {
-    stopTTS()
-    speaking.value = false
-    return
-  }
   if (!props.modelValue.trim()) return
-  speaking.value = true
   try {
-    await speak(props.modelValue, props.sourceLang || props.detectedLang || '自动检测')
+    await speak(props.modelValue, props.sourceLang || props.detectedLang || '自动检测', 'input')
   } catch (e) {
     console.warn('TTS 朗读失败:', e)
-  } finally {
-    speaking.value = false
   }
 }
 

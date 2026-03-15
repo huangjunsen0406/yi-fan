@@ -1,62 +1,13 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
-import { invoke } from '@tauri-apps/api/core'
-import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import { useSettingsStore } from '../stores/settings'
 import { useTranslateStore } from '../stores/translate'
 
-const settings = useSettingsStore()
 const translateStore = useTranslateStore()
-const clipboardActive = ref(false)
-let unlisten: UnlistenFn | null = null
-
-onMounted(async () => {
-  await settings.init()
-  const saved = settings.getConfig('_clipboard')['enabled']
-  if (saved === 'true') {
-    clipboardActive.value = true
-    try { await invoke('start_clipboard_monitor') } catch { /* ignore */ }
-  }
-
-  // Listen for external state changes (from tray menu)
-  unlisten = await listen<boolean>('clipboard-monitor-state', (event) => {
-    clipboardActive.value = event.payload
-  })
-})
-
-onUnmounted(() => {
-  unlisten?.()
-})
-
-async function toggleClipboard() {
-  clipboardActive.value = !clipboardActive.value
-  try {
-    if (clipboardActive.value) {
-      await invoke('start_clipboard_monitor')
-    } else {
-      await invoke('stop_clipboard_monitor')
-    }
-    settings.setConfig('_clipboard', 'enabled', String(clipboardActive.value))
-    await settings.save()
-  } catch (e) {
-    console.error('Clipboard monitor toggle failed:', e)
-    clipboardActive.value = !clipboardActive.value
-  }
-}
 </script>
+
 
 <template>
   <header class="app-header">
-    <div class="header-left">
-      <button
-        class="clipboard-btn"
-        :class="{ active: clipboardActive }"
-        @click="toggleClipboard"
-        :title="clipboardActive ? '关闭剪贴板监听' : '开启剪贴板监听'"
-      >
-        <i class="ph ph-clipboard-text"></i>
-      </button>
-    </div>
+    <div class="header-left"></div>
     <div class="header-icon">
       <svg width="32" height="32" viewBox="0 0 36 36" fill="none">
         <circle cx="10" cy="8" r="2.5" fill="#4F6EF7" opacity="0.5" />

@@ -26,12 +26,32 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "category": "Utility",
+    "copyright": "MIT",
+    "shortDescription": "易翻 - 轻量翻译工具",
+    "longDescription": "基于 Tauri 2 + Vue 3 的跨平台轻量翻译工具，集成 21 种翻译引擎",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "linux": {
+      "deb": {
+        "depends": [
+          "libxdo-dev",
+          "libxcb1",
+          "libxrandr2"
+        ]
+      },
+      "rpm": {
+        "depends": [
+          "libxdo",
+          "libxcb",
+          "libXrandr"
+        ]
+      }
+    }
   }
 }

@@ -35,7 +35,7 @@ export const useTranslateStore = defineStore('translate', () => {
   const autoCopyMode = ref<AutoCopyMode>('disable')
 
   // ── Dynamic translate (auto-translate on input with debounce) ──
-  const dynamicTranslate = ref(false)
+  const dynamicTranslate = ref(true)
 
   // ── Window always on top ──
   const alwaysOnTop = ref(false)
@@ -54,7 +54,7 @@ export const useTranslateStore = defineStore('translate', () => {
 
   const codeFormats = Object.keys(codeFormatLabels)
 
-  // 从 settings 加载用户设置的默认语言
+  // 从 settings 加载用户设置的默认语言 
   async function initDefaults() {
     const settings = useSettingsStore()
     await settings.init()
@@ -68,6 +68,8 @@ export const useTranslateStore = defineStore('translate', () => {
     }
     const savedMulti = settings.getConfig('_translate')['multiEngineMode']
     if (savedMulti === 'true') multiEngineMode.value = true
+    const savedEngine = settings.getConfig('_translate')['defaultEngine']
+    if (savedEngine) activeEngine.value = savedEngine
   }
 
   function toggleMode() {

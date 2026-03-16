@@ -6,7 +6,6 @@ import { invoke } from '@tauri-apps/api/core'
 import { useTranslateStore } from './stores/translate'
 import { translate } from './services/translate'
 import { useSettingsStore } from './stores/settings'
-import { writeText } from '@tauri-apps/plugin-clipboard-manager'
 import { addHistory } from './services/history'
 
 const router = useRouter()
@@ -17,6 +16,9 @@ onMounted(async () => {
   await listen<string>('selection-text', async (event) => {
     const text = event.payload
     if (!text || !text.trim()) return
+
+    // 暂停剪贴板监听，防止翻译期间干扰
+    try { await invoke('pause_clipboard_monitor_temp') } catch { /* ignore */ }
 
     // 检测语言
     let detectedLang = ''
@@ -67,6 +69,7 @@ onMounted(async () => {
       store.error = err.message || '翻译失败'
     } finally {
       store.loading = false
+      try { await invoke('resume_clipboard_monitor_temp') } catch { /* ignore */ }
     }
   })
 
@@ -76,12 +79,14 @@ onMounted(async () => {
   })
 
   // 3. 截图翻译完成
-  await listen<string>('ocr-translate-done', (event) => {
+  await listen<string>('ocr-translate-done', async (event) => {
     const text = event.payload
     if (text) {
       store.inputText = text
       if (store.mode === 'code') store.toggleMode()
       router.push('/')
+      // 自动翻译 OCR 识别的文字
+      await store.doTranslate()
     }
   })
 
@@ -126,15 +131,9 @@ onMounted(async () => {
       const result = await translate(engineName, text.trim(), sourceLang, targetLang, config)
       store.outputText = result
 
-      // Auto-copy the result back to clipboard
+      // Auto-copy the result back to clipboard (copyToClipboard handles skip internally)
       if (result) {
-        try {
-          await invoke('clipboard_skip_next', { text: result })
-          await writeText(result)
-          console.log('[clipboard] Auto-copied result to clipboard:', result.slice(0, 50))
-        } catch (e) {
-          console.error('[clipboard] Auto-copy failed:', e)
-        }
+        await store.copyToClipboard(result)
 
         // Save to history
         try {
@@ -151,7 +150,7 @@ onMounted(async () => {
       store.error = err.message || '翻译失败'
     } finally {
       store.loading = false
-      // Resume clipboard monitoring (Rust will update previous_text to current clipboard)
+      // Resume clipboard monitoring
       try { await invoke('resume_clipboard_monitor_temp') } catch { /* ignore */ }
     }
   })

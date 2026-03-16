@@ -59,7 +59,7 @@ export const useSettingsStore = defineStore('settings', () => {
     return enabledEngines.value.includes(engineName)
   }
 
-  function toggleEngine(engineName: string) {
+  async function toggleEngine(engineName: string) {
     const idx = enabledEngines.value.indexOf(engineName)
     if (idx >= 0) {
       // 至少保留一个引擎
@@ -68,6 +68,7 @@ export const useSettingsStore = defineStore('settings', () => {
     } else {
       enabledEngines.value.push(engineName)
     }
+    await save()
   }
 
   return {

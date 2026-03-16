@@ -1,10 +1,14 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use tauri::Emitter;
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
 /// Global flag: is clipboard monitoring active?
 static MONITORING: AtomicBool = AtomicBool::new(false);
+
+/// Generation counter: incremented every time start_clipboard_monitor is called.
+/// Each polling thread checks if its generation still matches to detect stale threads.
+static GENERATION: AtomicU64 = AtomicU64::new(0);
 
 /// Temporary pause flag (during selection translate, OCR, etc.)
 static PAUSED: AtomicBool = AtomicBool::new(false);
@@ -13,27 +17,34 @@ static PAUSED: AtomicBool = AtomicBool::new(false);
 static SKIP_TEXT: Mutex<String> = Mutex::new(String::new());
 
 /// Start the clipboard polling loop.
-/// If already running, this is a no-op (the flag is simply set to true).
+/// Each call increments the generation counter, causing any previous thread to exit.
 #[tauri::command]
 pub fn start_clipboard_monitor(app: tauri::AppHandle) {
-    if MONITORING.swap(true, Ordering::SeqCst) {
-        return;
-    }
+    // Increment generation to invalidate any existing polling thread
+    let gen = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+    MONITORING.store(true, Ordering::SeqCst);
 
-    println!("[clipboard] Starting clipboard monitor...");
+    println!("[clipboard] Starting clipboard monitor (gen={})...", gen);
 
     std::thread::spawn(move || {
         // Initialize with current clipboard content to avoid triggering on start
-        let mut previous_text = app
-            .clipboard()
-            .read_text()
-            .unwrap_or_default();
+        let mut previous_text = app.clipboard().read_text().unwrap_or_default();
 
-        println!("[clipboard] Initialized with current clipboard ({} chars)", previous_text.len());
+        println!(
+            "[clipboard] Initialized with current clipboard ({} chars)",
+            previous_text.len()
+        );
 
         loop {
+            // Check if monitoring was stopped
             if !MONITORING.load(Ordering::SeqCst) {
-                println!("[clipboard] Monitor stopped.");
+                println!("[clipboard] Monitor stopped (gen={}).", gen);
+                break;
+            }
+
+            // Check if a newer generation has started — this thread is stale
+            if GENERATION.load(Ordering::SeqCst) != gen {
+                println!("[clipboard] Monitor gen={} superseded, exiting.", gen);
                 break;
             }
 
@@ -91,6 +102,20 @@ pub fn start_clipboard_monitor(app: tauri::AppHandle) {
 pub fn stop_clipboard_monitor() {
     println!("[clipboard] Stopping clipboard monitor...");
     MONITORING.store(false, Ordering::SeqCst);
+}
+
+/// Toggle clipboard monitoring on/off. Emits "clipboard-monitor-toggled" with the new state.
+#[tauri::command]
+pub fn toggle_clipboard_monitor(app: tauri::AppHandle) {
+    if MONITORING.load(Ordering::SeqCst) {
+        println!("[clipboard] Toggle: stopping monitor");
+        MONITORING.store(false, Ordering::SeqCst);
+        let _ = app.emit("clipboard-monitor-toggled", false);
+    } else {
+        println!("[clipboard] Toggle: starting monitor");
+        start_clipboard_monitor(app.clone());
+        let _ = app.emit("clipboard-monitor-toggled", true);
+    }
 }
 
 /// Tell the clipboard monitor to skip the next occurrence of this text.

@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { invoke } from '@tauri-apps/api/core'
+import { getVersion } from '@tauri-apps/api/app'
 import { useSettingsStore } from '../stores/settings'
 import { providers, getProvider } from '../services/translate'
 import { ocrProviders, getOcrProvider } from '../services/ocr'
@@ -11,6 +12,7 @@ import { Message } from '@arco-design/web-vue'
 
 const router = useRouter()
 const settings = useSettingsStore()
+const appVersion = ref('0.0.0')
 
 // ── 一级导航 ──
 type PageKey = 'hotkey' | 'translate' | 'ocr' | 'service' | 'about'
@@ -293,6 +295,7 @@ function goBack() { router.push('/') }
 const currentProvider = computed(() => providers.find(p => p.name === activeEngine.value))
 
 onMounted(async () => {
+  appVersion.value = await getVersion()
   await settings.init()
   // 加载所有已保存的快捷键
   const savedHotkeys = settings.getConfig('_hotkeys')
@@ -344,7 +347,7 @@ async function toggleAutoStart() {
       <div class="sidebar-drag" data-tauri-drag-region></div>
       <div class="sidebar-logo">
         <span class="logo-text">易翻</span>
-        <span class="logo-ver">v0.1.0</span>
+        <span class="logo-ver">v{{ appVersion }}</span>
       </div>
       <nav class="sidebar-nav">
         <button
@@ -698,7 +701,7 @@ async function toggleAutoStart() {
 
           <div class="config-card about-card">
             <div class="about-logo">易翻</div>
-            <p class="about-ver">版本 0.1.0</p>
+            <p class="about-ver">版本 {{ appVersion }}</p>
             <p class="about-desc">基于 Tauri 2 + Vue 3 的轻量翻译工具。</p>
             <p class="about-desc">集成 21 种翻译引擎，支持全局快捷键呼出。</p>
             <div class="about-links">

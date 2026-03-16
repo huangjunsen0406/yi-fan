@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Emitter;
 use tauri::Manager;
 
@@ -5,6 +6,21 @@ mod clipboard;
 mod lang_detect;
 mod screenshot;
 mod tray;
+
+/// Global flags synced from frontend settings
+static OCR_HIDE_WINDOW: AtomicBool = AtomicBool::new(true);
+static CLOSE_ON_BLUR: AtomicBool = AtomicBool::new(false);
+static OCR_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
+
+#[tauri::command]
+fn set_ocr_hide_window(enabled: bool) {
+    OCR_HIDE_WINDOW.store(enabled, Ordering::Relaxed);
+}
+
+#[tauri::command]
+fn set_close_on_blur(enabled: bool) {
+    CLOSE_ON_BLUR.store(enabled, Ordering::Relaxed);
+}
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -65,49 +81,71 @@ pub(crate) fn do_selection_translate(app: tauri::AppHandle) {
 
 /// OCR recognize: hide window → screencapture → show window → emit navigate
 pub(crate) fn do_ocr_recognize(app: tauri::AppHandle) {
-    hide_main(&app);
-    // Longer delay to let the window fully hide before capture
-    std::thread::sleep(std::time::Duration::from_millis(400));
+    OCR_IN_PROGRESS.store(true, Ordering::Relaxed);
+    let did_hide = if OCR_HIDE_WINDOW.load(Ordering::Relaxed) {
+        hide_main(&app);
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        true
+    } else {
+        false
+    };
 
     match screenshot::screencapture_select() {
         Ok(true) => {
-            show_main(&app);
+            if did_hide {
+                show_main(&app);
+            }
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.emit("ocr-recognize-done", "");
             }
         }
         _ => {
-            // User cancelled or error — show window back
-            show_main(&app);
+            if did_hide {
+                show_main(&app);
+            }
         }
     }
+    // Delay clearing flag so blur handler doesn't fire during focus transition
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    OCR_IN_PROGRESS.store(false, Ordering::Relaxed);
 }
 
 /// OCR translate: hide → screencapture → OCR → show → emit text
 pub(crate) fn do_ocr_translate(app: tauri::AppHandle) {
-    hide_main(&app);
-    std::thread::sleep(std::time::Duration::from_millis(400));
+    OCR_IN_PROGRESS.store(true, Ordering::Relaxed);
+    let did_hide = if OCR_HIDE_WINDOW.load(Ordering::Relaxed) {
+        hide_main(&app);
+        std::thread::sleep(std::time::Duration::from_millis(400));
+        true
+    } else {
+        false
+    };
 
     match screenshot::screencapture_select() {
-        Ok(true) => {
-            // Run OCR
-            match screenshot::system_ocr("auto".to_string()) {
-                Ok(text) => {
+        Ok(true) => match screenshot::system_ocr("auto".to_string()) {
+            Ok(text) => {
+                if did_hide {
                     show_main(&app);
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.emit("ocr-translate-done", text);
-                    }
                 }
-                Err(e) => {
-                    eprintln!("OCR failed: {}", e);
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.emit("ocr-translate-done", text);
+                }
+            }
+            Err(e) => {
+                eprintln!("OCR failed: {}", e);
+                if did_hide {
                     show_main(&app);
                 }
             }
-        }
+        },
         _ => {
-            show_main(&app);
+            if did_hide {
+                show_main(&app);
+            }
         }
     }
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    OCR_IN_PROGRESS.store(false, Ordering::Relaxed);
 }
 
 // Tauri commands (for invoke from frontend)
@@ -237,16 +275,35 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Cmd+W or close button → hide window instead of quitting
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                println!("[window] CloseRequested intercepted, hiding window");
-                let _ = window.hide();
-                api.prevent_close();
+            match event {
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    println!("[window] CloseRequested intercepted, hiding window");
+                    let _ = window.hide();
+                    api.prevent_close();
+                }
+                tauri::WindowEvent::Focused(false) => {
+                    if CLOSE_ON_BLUR.load(Ordering::Relaxed)
+                        && !OCR_IN_PROGRESS.load(Ordering::Relaxed)
+                    {
+                        // Debounce: wait 300ms then check if still unfocused
+                        // This prevents hiding when clicking dock icon or switching back quickly
+                        let w = window.clone();
+                        std::thread::spawn(move || {
+                            std::thread::sleep(std::time::Duration::from_millis(300));
+                            if !w.is_focused().unwrap_or(true) && w.is_visible().unwrap_or(false) {
+                                let _ = w.hide();
+                            }
+                        });
+                    }
+                }
+                _ => {}
             }
         })
         .invoke_handler(tauri::generate_handler![
             greet,
             toggle_window,
+            set_ocr_hide_window,
+            set_close_on_blur,
             selection_translate,
             ocr_recognize,
             ocr_translate,
@@ -264,6 +321,17 @@ pub fn run() {
             clipboard::toggle_clipboard_monitor,
             lang_detect::detect_language,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::Reopen { has_visible_windows, .. } = event {
+                if !has_visible_windows {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.unminimize();
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                }
+            }
+        });
 }

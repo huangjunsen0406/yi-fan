@@ -190,6 +190,14 @@ onMounted(async () => {
       console.error('Tray clipboard toggle failed:', e)
     }
   })
+  // 7. Sync OCR settings to Rust backend on startup
+  {
+    const settings = useSettingsStore()
+    await settings.init()
+    const ocrCfg = settings.getConfig('_ocr')
+    await invoke('set_ocr_hide_window', { enabled: ocrCfg['hideWindow'] === 'true' })
+    await invoke('set_close_on_blur', { enabled: ocrCfg['closeOnBlur'] === 'true' })
+  }
 })
 </script>
 

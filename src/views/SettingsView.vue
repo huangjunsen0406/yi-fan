@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { invoke } from '@tauri-apps/api/core'
 import { useSettingsStore } from '../stores/settings'
 import { providers, getProvider } from '../services/translate'
 import { ocrProviders, getOcrProvider } from '../services/ocr'
@@ -79,6 +80,9 @@ async function saveOcrSettings() {
   settings.setConfig('_ocr', 'closeOnBlur', String(ocrCloseOnBlur.value))
   settings.setConfig('_ocr', 'activeEngine', defaultOcrEngine.value)
   await settings.save()
+  // Sync to Rust backend
+  await invoke('set_ocr_hide_window', { enabled: ocrHideWindow.value })
+  await invoke('set_close_on_blur', { enabled: ocrCloseOnBlur.value })
 }
 
 async function testOcrEngine(name: string) {

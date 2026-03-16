@@ -89,7 +89,7 @@ async function testOcrEngine(name: string) {
     if (name === 'system_ocr') {
       ocrTestResults.value[name] = { status: 'success', message: '✓ 系统 OCR 可用' }
       return
-    }yi
+    }
     const config = settings.getConfig(name)
     // Use a tiny test image (1x1 white pixel PNG base64)
     const testBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=='

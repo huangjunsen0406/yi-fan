@@ -47,7 +47,7 @@
 ### 安装依赖
 
 ```bash
-npm install
+pnpm install
 ```
 
 ### 开发模式
@@ -55,7 +55,7 @@ npm install
 启动前端 Vite 服务器和 Tauri 调试窗口：
 
 ```bash
-npm run tauri dev
+pnpm run tauri dev
 ```
 
 ### 构建打包
@@ -63,7 +63,7 @@ npm run tauri dev
 构建前端并生成可执行安装包：
 
 ```bash
-npm run tauri build
+pnpm run tauri build
 ```
 
 打包后的文件将存放在 `src-tauri/target/release/bundle` 目录下。

@@ -56,17 +56,15 @@ async function doOCR() {
 
     ocrText.value = text
 
-    // 应用设置：自动复制
+    // 应用设置：自动复制（跳过剪贴板监听）
     if (ocrSettings['autoCopy'] === 'true' && text) {
       try {
-        await navigator.clipboard.writeText(text)
+        const { invoke } = await import('@tauri-apps/api/core')
+        const { writeText } = await import('@tauri-apps/plugin-clipboard-manager')
+        await invoke('clipboard_skip_next', { text })
+        await writeText(text)
       } catch {
-        const ta = document.createElement('textarea')
-        ta.value = text
-        document.body.appendChild(ta)
-        ta.select()
-        document.execCommand('copy')
-        document.body.removeChild(ta)
+        try { await navigator.clipboard.writeText(text) } catch { /* ignore */ }
       }
     }
 

@@ -90,6 +90,11 @@ let semaphore = DispatchSemaphore(value: 0)
 var resultText = ""
 
 let request = VNRecognizeTextRequest {{ request, error in
+    if let error = error {{
+        fputs("OCR error: \(error)\n", stderr)
+        semaphore.signal()
+        return
+    }}
     guard let observations = request.results as? [VNRecognizedTextObservation] else {{
         semaphore.signal()
         return
@@ -103,10 +108,13 @@ let request = VNRecognizeTextRequest {{ request, error in
 }}
 request.recognitionLevel = .accurate
 request.usesLanguageCorrection = true
+if #available(macOS 13.0, *) {{
+    request.revision = VNRecognizeTextRequestRevision3
+    request.automaticallyDetectsLanguage = true
+}}
 let lang = "{}"
 if lang == "auto" {{
-    // 自动模式：包含常用语言（中英日韩法德），Vision 会自动检测
-    request.recognitionLanguages = ["zh-Hans", "zh-Hant", "en-US", "ja-JP", "ko-KR", "fr-FR", "de-DE"]
+    request.recognitionLanguages = ["zh-Hans", "zh-Hant", "en-US", "ja", "ko-KR", "fr-FR", "de-DE", "es-ES", "pt-BR", "it-IT", "ru-RU"]
 }} else {{
     request.recognitionLanguages = [lang]
 }}
@@ -181,4 +189,3 @@ pub fn get_selected_text() -> Result<String, String> {
     let text = get_text();
     Ok(text.trim().to_string())
 }
-

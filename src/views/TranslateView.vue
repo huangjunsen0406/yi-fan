@@ -14,11 +14,12 @@ const store = useTranslateStore()
 
 onMounted(() => {
   store.initDefaults()
-  // 从 OCR 识别页跳回时，自动填入文字
+  // 从 OCR 识别页跳回时，自动填入文字并翻译
   const ocrText = route.query.text as string | undefined
   if (ocrText) {
     store.inputText = ocrText
     if (store.mode === 'code') store.toggleMode()
+    store.doTranslate()
   }
 })
 
@@ -29,6 +30,7 @@ watch(
     if (newText && typeof newText === 'string') {
       store.inputText = newText
       if (store.mode === 'code') store.toggleMode()
+      store.doTranslate()
     }
   }
 )

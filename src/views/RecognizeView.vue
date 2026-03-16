@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { getBase64, systemOCR, ocrProviders, recognize as ocrRecognize } from '../services/ocr'
 import { useSettingsStore } from '../stores/settings'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 
 const router = useRouter()
 const settings = useSettingsStore()
@@ -55,17 +56,15 @@ async function doOCR() {
 
     ocrText.value = text
 
-    // 应用设置：自动复制
+    // 应用设置：自动复制（跳过剪贴板监听）
     if (ocrSettings['autoCopy'] === 'true' && text) {
       try {
-        await navigator.clipboard.writeText(text)
+        const { invoke } = await import('@tauri-apps/api/core')
+        const { writeText } = await import('@tauri-apps/plugin-clipboard-manager')
+        await invoke('clipboard_skip_next', { text })
+        await writeText(text)
       } catch {
-        const ta = document.createElement('textarea')
-        ta.value = text
-        document.body.appendChild(ta)
-        ta.select()
-        document.execCommand('copy')
-        document.body.removeChild(ta)
+        try { await navigator.clipboard.writeText(text) } catch { /* ignore */ }
       }
     }
 
@@ -103,11 +102,7 @@ function goBack() {
   router.push('/')
 }
 
-onMounted(async () => {
-  await settings.init()
-  const savedOcr = settings.getConfig('_ocr')
-  if (savedOcr['defaultLang']) ocrLang.value = savedOcr['defaultLang']
-  if (savedOcr['activeEngine']) activeEngine.value = savedOcr['activeEngine']
+async function refreshOCR() {
   try {
     base64.value = await getBase64()
     await doOCR()
@@ -115,6 +110,25 @@ onMounted(async () => {
     error.value = err.message || '加载失败'
     loading.value = false
   }
+}
+
+let unlistenOcrDone: UnlistenFn | null = null
+
+onMounted(async () => {
+  await settings.init()
+  const savedOcr = settings.getConfig('_ocr')
+  if (savedOcr['defaultLang']) ocrLang.value = savedOcr['defaultLang']
+  if (savedOcr['activeEngine']) activeEngine.value = savedOcr['activeEngine']
+  await refreshOCR()
+
+  // Listen for subsequent OCR captures while already on this page
+  unlistenOcrDone = await listen('ocr-recognize-done', () => {
+    refreshOCR()
+  })
+})
+
+onUnmounted(() => {
+  if (unlistenOcrDone) unlistenOcrDone()
 })
 </script>
 

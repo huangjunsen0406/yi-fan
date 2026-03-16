@@ -151,6 +151,19 @@ export const useTranslateStore = defineStore('translate', () => {
       return
     }
 
+    // 自动检测语言并智能切换目标语言
+    if (sourceLang.value === '自动检测' && mode.value === 'translate') {
+      // 先检测语言
+      if (!detectedLang.value) {
+        await detectInputLang()
+      }
+      // 检测到的语言与目标语言相同时，自动切换
+      if (detectedLang.value && detectedLang.value === targetLang.value) {
+        const isChinese = detectedLang.value === '简体中文' || detectedLang.value === '繁体中文'
+        targetLang.value = isChinese ? '英语' : '简体中文'
+      }
+    }
+
     loading.value = true
     error.value = ''
 

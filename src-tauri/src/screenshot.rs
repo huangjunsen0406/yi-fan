@@ -66,7 +66,8 @@ pub fn get_base64() -> Result<String, String> {
 
 /// macOS system OCR using Vision framework via Swift CLI
 #[tauri::command]
-pub fn system_ocr(_lang: String) -> Result<String, String> {
+#[allow(unused_variables)]
+pub fn system_ocr(lang: String) -> Result<String, String> {
     let path = cut_screenshot_path();
     if !path.exists() {
         return Err("Cut screenshot not found".to_string());

@@ -12,21 +12,30 @@ const store = useTranslateStore()
 
 const clipboardActive = ref(false)
 let unlisten: UnlistenFn | null = null
+let unlistenToggled: UnlistenFn | null = null
 
 onMounted(async () => {
   await settings.init()
   const saved = settings.getConfig('_clipboard')['enabled']
-  if (saved === 'true') {
+  // 默认开启剪贴板监听（首次启动无配置时也开启）
+  if (saved !== 'false') {
     clipboardActive.value = true
     try { await invoke('start_clipboard_monitor') } catch { /* ignore */ }
   }
   unlisten = await listen<boolean>('clipboard-monitor-state', (event) => {
     clipboardActive.value = event.payload
   })
+  // 快捷键切换剪贴板监听时同步 UI
+  unlistenToggled = await listen<boolean>('clipboard-monitor-toggled', async (event) => {
+    clipboardActive.value = event.payload
+    settings.setConfig('_clipboard', 'enabled', String(event.payload))
+    await settings.save()
+  })
 })
 
 onUnmounted(() => {
   unlisten?.()
+  unlistenToggled?.()
 })
 
 async function toggleClipboard() {

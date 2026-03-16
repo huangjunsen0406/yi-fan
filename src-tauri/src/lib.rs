@@ -66,8 +66,8 @@ pub(crate) fn do_selection_translate(app: tauri::AppHandle) {
 /// OCR recognize: hide window → screencapture → show window → emit navigate
 pub(crate) fn do_ocr_recognize(app: tauri::AppHandle) {
     hide_main(&app);
-    // Small delay to let the window fully hide
-    std::thread::sleep(std::time::Duration::from_millis(200));
+    // Longer delay to let the window fully hide before capture
+    std::thread::sleep(std::time::Duration::from_millis(400));
 
     match screenshot::screencapture_select() {
         Ok(true) => {
@@ -86,7 +86,7 @@ pub(crate) fn do_ocr_recognize(app: tauri::AppHandle) {
 /// OCR translate: hide → screencapture → OCR → show → emit text
 pub(crate) fn do_ocr_translate(app: tauri::AppHandle) {
     hide_main(&app);
-    std::thread::sleep(std::time::Duration::from_millis(200));
+    std::thread::sleep(std::time::Duration::from_millis(400));
 
     match screenshot::screencapture_select() {
         Ok(true) => {
@@ -151,29 +151,46 @@ pub fn run() {
                     Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState,
                 };
 
-                let shortcut_toggle = Shortcut::new(Some(Modifiers::ALT), Code::Space);
-                let shortcut_selection = Shortcut::new(Some(Modifiers::ALT), Code::KeyD);
-                let shortcut_ocr_recognize = Shortcut::new(Some(Modifiers::ALT), Code::KeyS);
+                let shortcut_toggle =
+                    Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SUPER), Code::Space);
+                let shortcut_selection =
+                    Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SUPER), Code::KeyD);
+                let shortcut_ocr_recognize =
+                    Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyO);
                 let shortcut_ocr_translate =
-                    Shortcut::new(Some(Modifiers::ALT | Modifiers::SHIFT), Code::KeyS);
+                    Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyP);
                 let shortcut_code_format =
-                    Shortcut::new(Some(Modifiers::ALT | Modifiers::SHIFT), Code::KeyU);
+                    Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyU);
+                let shortcut_clipboard =
+                    Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyL);
 
                 let s_toggle = shortcut_toggle;
                 let s_selection = shortcut_selection;
                 let s_ocr_rec = shortcut_ocr_recognize;
                 let s_ocr_trans = shortcut_ocr_translate;
                 let s_code_fmt = shortcut_code_format;
+                let s_clipboard = shortcut_clipboard;
+
+                use std::sync::atomic::{AtomicU64, Ordering};
+                use std::time::{SystemTime, UNIX_EPOCH};
+                static LAST_TOGGLE: AtomicU64 = AtomicU64::new(0);
 
                 app.handle().plugin(
                     tauri_plugin_global_shortcut::Builder::new()
                         .with_handler(move |app, shortcut, event| {
                             if event.state() == ShortcutState::Pressed {
                                 if shortcut == &s_toggle {
+                                    // Debounce: ignore if < 500ms since last toggle
+                                    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
+                                    let last = LAST_TOGGLE.load(Ordering::Relaxed);
+                                    if now - last < 500 { return; }
+                                    LAST_TOGGLE.store(now, Ordering::Relaxed);
+
                                     if let Some(window) = app.get_webview_window("main") {
                                         if window.is_visible().unwrap_or(false) {
                                             let _ = window.hide();
                                         } else {
+                                            let _ = window.unminimize();
                                             let _ = window.show();
                                             let _ = window.set_focus();
                                         }
@@ -199,6 +216,8 @@ pub fn run() {
                                     if let Some(window) = app.get_webview_window("main") {
                                         let _ = window.emit("cycle-code-format", ());
                                     }
+                                } else if shortcut == &s_clipboard {
+                                    clipboard::toggle_clipboard_monitor(app.clone());
                                 }
                             }
                         })
@@ -211,10 +230,19 @@ pub fn run() {
                 gs.register(shortcut_ocr_recognize)?;
                 gs.register(shortcut_ocr_translate)?;
                 gs.register(shortcut_code_format)?;
+                gs.register(shortcut_clipboard)?;
 
-                println!("Registered global shortcuts: Alt+Space, Alt+D, Alt+S, Alt+Shift+S, Alt+Shift+U");
+                println!("Registered global shortcuts: Ctrl+Cmd+Space, Ctrl+Cmd+D, Ctrl+Alt+O, Ctrl+Alt+P, Ctrl+Alt+U, Ctrl+Alt+L");
             }
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Cmd+W or close button → hide window instead of quitting
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                println!("[window] CloseRequested intercepted, hiding window");
+                let _ = window.hide();
+                api.prevent_close();
+            }
         })
         .invoke_handler(tauri::generate_handler![
             greet,
@@ -233,6 +261,7 @@ pub fn run() {
             clipboard::clipboard_skip_next,
             clipboard::pause_clipboard_monitor_temp,
             clipboard::resume_clipboard_monitor_temp,
+            clipboard::toggle_clipboard_monitor,
             lang_detect::detect_language,
         ])
         .run(tauri::generate_context!())

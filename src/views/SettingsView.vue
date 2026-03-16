@@ -6,6 +6,7 @@ import { providers, getProvider } from '../services/translate'
 import { ocrProviders, getOcrProvider } from '../services/ocr'
 import { register, unregister, unregisterAll, isRegistered } from '@tauri-apps/plugin-global-shortcut'
 import { enable as enableAutostart, disable as disableAutostart, isEnabled as isAutostartEnabled } from '@tauri-apps/plugin-autostart'
+import { Message } from '@arco-design/web-vue'
 
 const router = useRouter()
 const settings = useSettingsStore()
@@ -38,6 +39,8 @@ const defaultSourceLang = ref('自动检测')
 const defaultTargetLang = ref('简体中文')
 const showSourceDrop = ref(false)
 const showTargetDrop = ref(false)
+const showDefaultEngineDrop = ref(false)
+const defaultTranslateEngine = ref('google')
 
 // ── OCR 设置 ──
 const ocrLangOptions = [
@@ -67,7 +70,7 @@ const ocrTestResults = ref<Record<string, { status: 'idle' | 'loading' | 'succes
 for (const p of ocrProviders) ocrTestResults.value[p.name] = { status: 'idle', message: '' }
 
 
-function saveOcrSettings() {
+async function saveOcrSettings() {
   settings.setConfig('_ocr', 'defaultLang', ocrLang.value)
   settings.setConfig('_ocr', 'deleteNewline', String(ocrDeleteNewline.value))
   settings.setConfig('_ocr', 'autoCopy', String(ocrAutoCopy.value))
@@ -75,6 +78,7 @@ function saveOcrSettings() {
   settings.setConfig('_ocr', 'hideWindow', String(ocrHideWindow.value))
   settings.setConfig('_ocr', 'closeOnBlur', String(ocrCloseOnBlur.value))
   settings.setConfig('_ocr', 'activeEngine', defaultOcrEngine.value)
+  await settings.save()
 }
 
 async function testOcrEngine(name: string) {
@@ -85,7 +89,7 @@ async function testOcrEngine(name: string) {
     if (name === 'system_ocr') {
       ocrTestResults.value[name] = { status: 'success', message: '✓ 系统 OCR 可用' }
       return
-    }
+    }yi
     const config = settings.getConfig(name)
     // Use a tiny test image (1x1 white pixel PNG base64)
     const testBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=='
@@ -99,13 +103,16 @@ async function testOcrEngine(name: string) {
 function closeAllDropdowns() {
   showSourceDrop.value = false
   showTargetDrop.value = false
+  showDefaultEngineDrop.value = false
   showOcrLangDrop.value = false
   showOcrEngineDrop.value = false
 }
 
-function saveDefaultLangs() {
+async function saveDefaultLangs() {
   settings.setConfig('_translate', 'defaultSourceLang', defaultSourceLang.value)
   settings.setConfig('_translate', 'defaultTargetLang', defaultTargetLang.value)
+  settings.setConfig('_translate', 'defaultEngine', defaultTranslateEngine.value)
+  await settings.save()
 }
 
 // ── 快捷键 ──
@@ -118,13 +125,56 @@ interface HotkeyItem {
 }
 
 const hotkeys = ref<HotkeyItem[]>([
-  { id: 'toggle',      label: '唤出/隐藏窗口',  command: 'toggle_window',      value: 'Alt+Space',   status: { type: 'idle', message: '' } },
-  { id: 'selection',   label: '划词翻译',       command: 'selection_translate', value: 'Alt+D',       status: { type: 'idle', message: '' } },
-  { id: 'ocr_recognize', label: '截图识别(OCR)', command: 'ocr_recognize',      value: 'Alt+S',       status: { type: 'idle', message: '' } },
-  { id: 'ocr_translate', label: '截图翻译',     command: 'ocr_translate',      value: 'Alt+Shift+S', status: { type: 'idle', message: '' } },
-  { id: 'code_format',   label: '代码格式切换',  command: 'cycle_code_format',  value: 'Alt+Shift+U', status: { type: 'idle', message: '' } },
+  { id: 'toggle',      label: '唤出/隐藏窗口',  command: 'toggle_window',      value: 'Control+Cmd+Space',  status: { type: 'idle', message: '' } },
+  { id: 'selection',   label: '划词翻译',       command: 'selection_translate', value: 'Control+Cmd+D',      status: { type: 'idle', message: '' } },
+  { id: 'ocr_recognize', label: '截图识别(OCR)', command: 'ocr_recognize',      value: 'Control+Alt+O',  status: { type: 'idle', message: '' } },
+  { id: 'ocr_translate', label: '截图翻译',     command: 'ocr_translate',      value: 'Control+Alt+P',  status: { type: 'idle', message: '' } },
+  { id: 'code_format',   label: '代码格式切换',  command: 'cycle_code_format',  value: 'Control+Alt+U',  status: { type: 'idle', message: '' } },
+  { id: 'clipboard',     label: '剪贴板监听',     command: 'toggle_clipboard',   value: 'Control+Alt+L',  status: { type: 'idle', message: '' } },
 ])
 const activeHotkeyIdx = ref(-1)
+
+// 默认快捷键映射
+const DEFAULT_HOTKEYS: Record<string, string> = {
+  toggle: 'Control+Cmd+Space',
+  selection: 'Control+Cmd+D',
+  ocr_recognize: 'Control+Alt+O',
+  ocr_translate: 'Control+Alt+P',
+  code_format: 'Control+Alt+U',
+  clipboard: 'Control+Alt+L',
+}
+
+async function restoreDefaultHotkeys() {
+  // Reset all values
+  for (const hk of hotkeys.value) {
+    hk.value = DEFAULT_HOTKEYS[hk.id] || ''
+    hk.status = { type: 'idle', message: '' }
+  }
+  // Re-register all silently
+  try { await unregisterAll() } catch { /* ignore */ }
+  let failCount = 0
+  for (const hk of hotkeys.value) {
+    if (!hk.value) continue
+    try {
+      const already = await isRegistered(hk.value)
+      if (already) await unregister(hk.value)
+      await register(hk.value, (event) => {
+        if (event.state === 'Pressed') {
+          import('@tauri-apps/api/core').then(({ invoke }) => invoke(hk.command))
+        }
+      })
+      settings.setConfig('_hotkeys', hk.id, hk.value)
+    } catch {
+      failCount++
+    }
+  }
+  await settings.save()
+  if (failCount === 0) {
+    Message.success('已恢复默认快捷键')
+  } else {
+    Message.error(`${failCount} 个快捷键注册失败`)
+  }
+}
 
 const keyMap: Record<string, string> = {
   Backquote: '`', Backslash: '\\', BracketLeft: '[', BracketRight: ']',
@@ -150,10 +200,11 @@ function onHotkeyKeyDown(e: KeyboardEvent, idx: number) {
   e.preventDefault()
   e.stopPropagation()
   if (e.code === 'Backspace') { hotkeys.value[idx].value = ''; return }
+  const isMac = navigator.platform.toUpperCase().includes('MAC')
   let combo = ''
   if (e.ctrlKey) combo = 'Control'
   if (e.shiftKey) combo = `${combo}${combo ? '+' : ''}Shift`
-  if (e.metaKey) combo = `${combo}${combo ? '+' : ''}Super`
+  if (e.metaKey) combo = `${combo}${combo ? '+' : ''}${isMac ? 'Cmd' : 'Super'}`
   if (e.altKey) combo = `${combo}${combo ? '+' : ''}Alt`
   let code = e.code
   if (code.startsWith('Key')) code = code.substring(3)
@@ -171,6 +222,12 @@ async function registerHotkey(idx: number) {
   const item = hotkeys.value[idx]
   const key = item.value
   if (!key) { item.status = { type: 'error', message: '请先录入快捷键' }; return }
+  // 互斥检测：检查是否与其他功能重复
+  const duplicate = hotkeys.value.find((hk, i) => i !== idx && hk.value === key)
+  if (duplicate) {
+    item.status = { type: 'error', message: `与「${duplicate.label}」冲突` }
+    return
+  }
   try {
     const already = await isRegistered(key)
     if (already) await unregister(key)
@@ -181,8 +238,9 @@ async function registerHotkey(idx: number) {
     })
     item.status = { type: 'success', message: `✓ 已注册 ${key}` }
     settings.setConfig('_hotkeys', item.id, key)
+    await settings.save()
   } catch (err: any) {
-    item.status = { type: 'error', message: err.message || '注册失败' }
+    item.status = { type: 'error', message: `注册失败，可能与系统或其他应用冲突，请换一个` }
   }
 }
 
@@ -220,12 +278,9 @@ async function testEngine(name: string) {
   }
 }
 
-// ── 保存 ──
-const saving = ref(false)
-async function handleSave() {
-  saving.value = true
-  try { await settings.save(); setTimeout(() => { saving.value = false }, 800) }
-  catch { saving.value = false }
+// Auto-save helper for service config inputs
+async function autoSaveConfig() {
+  await settings.save()
 }
 
 function goBack() { router.push('/') }
@@ -244,6 +299,8 @@ onMounted(async () => {
   if (savedSrcLang) defaultSourceLang.value = savedSrcLang
   const savedTgtLang = settings.getConfig('_translate')['defaultTargetLang']
   if (savedTgtLang) defaultTargetLang.value = savedTgtLang
+  const savedEngine = settings.getConfig('_translate')['defaultEngine']
+  if (savedEngine) defaultTranslateEngine.value = savedEngine
   // 加载 OCR 设置
   const savedOcr = settings.getConfig('_ocr')
   if (savedOcr['defaultLang']) ocrLang.value = savedOcr['defaultLang']
@@ -310,17 +367,18 @@ async function toggleAutoStart() {
       <!-- 顶栏 -->
       <div class="main-header" data-tauri-drag-region>
         <h2 class="page-title">{{ sidebarItems.find(i => i.key === activePage)?.label }}</h2>
-        <button class="save-btn" :disabled="saving" @click="handleSave">
-          <i class="ph" :class="saving ? 'ph-check' : 'ph-floppy-disk'"></i>
-          {{ saving ? '已保存' : '保存' }}
-        </button>
       </div>
 
       <div class="main-content">
         <!-- ========== 快捷键页 ========== -->
         <div v-if="activePage === 'hotkey'" class="page-panel">
           <div class="config-card">
-            <h3 class="card-title">全局快捷键</h3>
+            <div class="card-header-row">
+              <h3 class="card-title">全局快捷键</h3>
+              <button class="action-btn secondary" @click="restoreDefaultHotkeys">
+                <i class="ph ph-arrow-counter-clockwise"></i> 恢复默认
+              </button>
+            </div>
             <div v-for="(hk, idx) in hotkeys" :key="hk.id" class="form-item">
               <label>{{ hk.label }}</label>
               <div class="hotkey-input-row">
@@ -386,6 +444,22 @@ async function toggleAutoStart() {
                     :class="{ active: defaultTargetLang === lang }"
                     @click.stop="defaultTargetLang = lang; showTargetDrop = false; saveDefaultLangs()"
                   >{{ lang }}</div>
+                </div>
+              </div>
+            </div>
+            <div class="config-row">
+              <span class="row-label">默认翻译引擎</span>
+              <div class="custom-select" :class="{ open: showDefaultEngineDrop }" @click.stop="showDefaultEngineDrop = !showDefaultEngineDrop; showSourceDrop = false; showTargetDrop = false">
+                <span class="select-text">{{ providers.find(p => p.name === defaultTranslateEngine)?.label || '谷歌翻译' }}</span>
+                <i class="ph ph-caret-down select-arrow"></i>
+                <div v-if="showDefaultEngineDrop" class="select-dropdown">
+                  <div
+                    v-for="p in providers.filter(ep => settings.isEnabled(ep.name))"
+                    :key="p.name"
+                    class="select-option"
+                    :class="{ active: defaultTranslateEngine === p.name }"
+                    @click.stop="defaultTranslateEngine = p.name; showDefaultEngineDrop = false; saveDefaultLangs()"
+                  >{{ p.label }}</div>
                 </div>
               </div>
             </div>
@@ -515,6 +589,7 @@ async function toggleAutoStart() {
                     :placeholder="field.placeholder"
                     :value="settings.getConfig(activeOcrEngine)[field.key] || ''"
                     @input="settings.setConfig(activeOcrEngine, field.key, ($event.target as HTMLInputElement).value)"
+                    @blur="autoSaveConfig()"
                   />
                 </div>
               </div>
@@ -575,6 +650,7 @@ async function toggleAutoStart() {
                   :placeholder="field.placeholder"
                   :value="settings.getConfig(currentProvider.name)[field.key] || ''"
                   @input="settings.setConfig(currentProvider.name, field.key, ($event.target as HTMLInputElement).value)"
+                  @blur="autoSaveConfig()"
                 />
               </div>
             </div>
@@ -1086,6 +1162,20 @@ async function toggleAutoStart() {
 
 .action-btn:hover { opacity: 0.9; }
 .action-btn:disabled { opacity: 0.5; cursor: default; }
+.action-btn.secondary {
+  background: transparent;
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary);
+}
+.action-btn.secondary:hover { background: rgba(100, 108, 255, 0.08); }
+
+.card-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.card-header-row .card-title { margin-bottom: 0; }
 
 /* ── Test Area ── */
 .test-area {

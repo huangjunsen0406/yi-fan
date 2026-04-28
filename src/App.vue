@@ -11,67 +11,69 @@ import { addHistory } from './services/history'
 const router = useRouter()
 const store = useTranslateStore()
 
-onMounted(async () => {
-  // 1. 划词翻译：自动检测语言 → 中文翻英文，其他翻中文 → 自动复制译文
-  await listen<string>('selection-text', async (event) => {
-    const text = event.payload
-    if (!text || !text.trim()) return
+/**
+ * Shared silent translate logic: detect language → translate → auto-copy → save history.
+ * Used by both selection-text and clipboard-text handlers.
+ */
+async function silentTranslate(text: string, navigateToHome = false) {
+  if (!text || !text.trim()) return
 
-    // 暂停剪贴板监听，防止翻译期间干扰
-    try { await invoke('pause_clipboard_monitor_temp') } catch { /* ignore */ }
+  try { await invoke('pause_clipboard_monitor_temp') } catch { /* ignore */ }
 
-    // 检测语言
-    let detectedLang = ''
-    try {
-      detectedLang = await invoke<string>('detect_language', { text })
-    } catch { /* ignore */ }
+  // Detect language
+  let detectedLang = ''
+  try {
+    detectedLang = await invoke<string>('detect_language', { text })
+  } catch { /* ignore */ }
 
-    // 中文 → 英文，其他 → 中文
-    const isChinese = detectedLang === '简体中文' || detectedLang === '繁体中文'
-    const sourceLang = detectedLang || '自动检测'
-    const targetLang = isChinese ? '英语' : '简体中文'
+  // Chinese → English, others → Chinese
+  const isChinese = detectedLang === '简体中文' || detectedLang === '繁体中文'
+  const sourceLang = detectedLang || '自动检测'
+  const targetLang = isChinese ? '英语' : '简体中文'
 
-    // 更新 store（静默翻译，不弹窗）
-    store.inputText = text.trim()
-    store.sourceLang = sourceLang
-    store.targetLang = targetLang
-    store.detectedLang = detectedLang
-    if (store.mode === 'code') store.toggleMode()
+  // Update store
+  store.inputText = text.trim()
+  store.sourceLang = sourceLang
+  store.targetLang = targetLang
+  store.detectedLang = detectedLang
+  if (store.mode === 'code') store.toggleMode()
+  if (navigateToHome) router.push('/')
 
-    // 翻译
-    const settings = useSettingsStore()
-    await settings.init()
-    const engineName = store.activeEngine
-    const config = settings.getConfig(engineName)
+  // Translate
+  const settings = useSettingsStore()
+  await settings.init()
+  const engineName = store.activeEngine
+  const config = settings.getConfig(engineName)
 
-    try {
-      store.loading = true
-      store.error = ''
-      const result = await translate(engineName, text.trim(), sourceLang, targetLang, config)
-      store.outputText = result
+  try {
+    store.loading = true
+    store.error = ''
+    const result = await translate(engineName, text.trim(), sourceLang, targetLang, config)
+    store.outputText = result
 
-      // 自动复制译文到剪贴板
-      if (result) {
-        await store.copyToClipboard(result)
-
-        // 保存历史
-        try {
-          await addHistory({
-            source_text: text.trim(),
-            result_text: result,
-            engine: engineName,
-            source_lang: sourceLang,
-            target_lang: targetLang,
-          })
-        } catch { /* ignore */ }
-      }
-    } catch (err: any) {
-      store.error = err.message || '翻译失败'
-    } finally {
-      store.loading = false
-      try { await invoke('resume_clipboard_monitor_temp') } catch { /* ignore */ }
+    if (result) {
+      await store.copyToClipboard(result)
+      try {
+        await addHistory({
+          source_text: text.trim(),
+          result_text: result,
+          engine: engineName,
+          source_lang: sourceLang,
+          target_lang: targetLang,
+        })
+      } catch { /* ignore */ }
     }
-  })
+  } catch (err: any) {
+    store.error = err.message || '翻译失败'
+  } finally {
+    store.loading = false
+    try { await invoke('resume_clipboard_monitor_temp') } catch { /* ignore */ }
+  }
+}
+
+onMounted(async () => {
+  // 1. 划词翻译
+  await listen<string>('selection-text', (event) => silentTranslate(event.payload))
 
   // 2. 截图识别完成
   await listen('ocr-recognize-done', () => {
@@ -85,75 +87,12 @@ onMounted(async () => {
       store.inputText = text
       if (store.mode === 'code') store.toggleMode()
       router.push('/')
-      // 自动翻译 OCR 识别的文字
       await store.doTranslate()
     }
   })
 
-  // 4. 剪贴板监听：自动检测语言 → 中文翻译成英文，其他语言翻译成中文
-  await listen<string>('clipboard-text', async (event) => {
-    const text = event.payload
-    if (!text || !text.trim()) return
-
-    // Pause clipboard monitoring during translation to prevent infinite loop
-    try { await invoke('pause_clipboard_monitor_temp') } catch { /* ignore */ }
-
-    // Detect language via Rust lingua
-    let detectedLang = ''
-    try {
-      detectedLang = await invoke<string>('detect_language', { text })
-    } catch { /* ignore */ }
-
-    // Smart language switching:
-    // Chinese → translate to English
-    // Anything else → translate to Chinese
-    const isChinese = detectedLang === '简体中文' || detectedLang === '繁体中文'
-    const sourceLang = detectedLang || '自动检测'
-    const targetLang = isChinese ? '英语' : '简体中文'
-
-    // Update store UI
-    store.inputText = text.trim()
-    store.sourceLang = sourceLang
-    store.targetLang = targetLang
-    store.detectedLang = detectedLang
-    if (store.mode === 'code') store.toggleMode()
-    router.push('/')
-
-    // Auto-translate with the first enabled engine
-    const settings = useSettingsStore()
-    await settings.init()
-    const engineName = store.activeEngine
-    const config = settings.getConfig(engineName)
-
-    try {
-      store.loading = true
-      store.error = ''
-      const result = await translate(engineName, text.trim(), sourceLang, targetLang, config)
-      store.outputText = result
-
-      // Auto-copy the result back to clipboard (copyToClipboard handles skip internally)
-      if (result) {
-        await store.copyToClipboard(result)
-
-        // Save to history
-        try {
-          await addHistory({
-            source_text: text.trim(),
-            result_text: result,
-            engine: engineName,
-            source_lang: sourceLang,
-            target_lang: targetLang,
-          })
-        } catch { /* ignore */ }
-      }
-    } catch (err: any) {
-      store.error = err.message || '翻译失败'
-    } finally {
-      store.loading = false
-      // Resume clipboard monitoring
-      try { await invoke('resume_clipboard_monitor_temp') } catch { /* ignore */ }
-    }
-  })
+  // 4. 剪贴板监听
+  await listen<string>('clipboard-text', (event) => silentTranslate(event.payload, true))
 
   // 5. Alt+Shift+U → 循环转换代码命名格式
   await listen('cycle-code-format', async () => {

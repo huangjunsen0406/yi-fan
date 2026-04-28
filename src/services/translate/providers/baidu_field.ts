@@ -1,4 +1,4 @@
-import { fetch } from '@tauri-apps/plugin-http'
+import { fetchWithTimeout as fetch } from '../utils/fetchWithTimeout'
 import type { TranslateProvider } from '../types'
 import { simpleMd5 } from '../utils/md5'
 

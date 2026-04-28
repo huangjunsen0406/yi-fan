@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Mutex;
 use tauri::Emitter;
 use tauri_plugin_clipboard_manager::ClipboardExt;
@@ -10,8 +10,9 @@ static MONITORING: AtomicBool = AtomicBool::new(false);
 /// Each polling thread checks if its generation still matches to detect stale threads.
 static GENERATION: AtomicU64 = AtomicU64::new(0);
 
-/// Temporary pause flag (during selection translate, OCR, etc.)
-static PAUSED: AtomicBool = AtomicBool::new(false);
+/// Pause reference counter (supports nested pause/resume from concurrent handlers).
+/// Paused when > 0, active when == 0.
+static PAUSE_COUNT: AtomicU32 = AtomicU32::new(0);
 
 /// Text to skip on next clipboard poll (set by frontend before auto-copy)
 static SKIP_TEXT: Mutex<String> = Mutex::new(String::new());
@@ -49,7 +50,7 @@ pub fn start_clipboard_monitor(app: tauri::AppHandle) {
             }
 
             // Skip polling while paused (selection translate, OCR, etc.)
-            if PAUSED.load(Ordering::SeqCst) {
+            if PAUSE_COUNT.load(Ordering::SeqCst) > 0 {
                 std::thread::sleep(std::time::Duration::from_millis(500));
                 // Update previous_text after resume to avoid stale trigger
                 if let Ok(content) = app.clipboard().read_text() {
@@ -127,14 +128,16 @@ pub fn clipboard_skip_next(text: String) {
     }
 }
 
-/// Temporarily pause clipboard monitoring (e.g., during selection translate).
+/// Temporarily pause clipboard monitoring (supports nested calls via reference counting).
 #[tauri::command]
 pub fn pause_clipboard_monitor_temp() {
-    PAUSED.store(true, Ordering::SeqCst);
+    PAUSE_COUNT.fetch_add(1, Ordering::SeqCst);
 }
 
-/// Resume clipboard monitoring after a pause.
+/// Resume clipboard monitoring after a pause (decrements ref count; resumes when count reaches 0).
 #[tauri::command]
 pub fn resume_clipboard_monitor_temp() {
-    PAUSED.store(false, Ordering::SeqCst);
+    PAUSE_COUNT.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |current| {
+        Some(current.saturating_sub(1))
+    }).ok();
 }

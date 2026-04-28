@@ -183,6 +183,9 @@ pub fn run() {
             // System tray
             tray::create_tray(app)?;
 
+            // Clean up old temp screenshot files on startup
+            screenshot::cleanup_old_temp_files();
+
             #[cfg(desktop)]
             {
                 use tauri_plugin_global_shortcut::{

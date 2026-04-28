@@ -80,6 +80,11 @@ jobs:
         run: |
           VERSION=${{ needs.change-version.outputs.version }}
           ARCH=$([[ "${{ matrix.target }}" == "aarch64-apple-darwin" ]] && echo "aarch64" || echo "x64")
+          # Rename DMG
+          DMG_DIR="src-tauri/target/${{ matrix.target }}/release/bundle/dmg"
+          for f in "$DMG_DIR"/*.dmg; do
+            [ -f "$f" ] && mv "$f" "$DMG_DIR/yi-fan_${VERSION}_${ARCH}.dmg"
+          done
           # Rename updater bundle
           if [ -f "src-tauri/target/${{ matrix.target }}/release/bundle/macos/易翻.app.tar.gz" ]; then
             mv "src-tauri/target/${{ matrix.target }}/release/bundle/macos/易翻.app.tar.gz" \
@@ -143,6 +148,17 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm tauri build --target ${{ matrix.target }} --bundles nsis
 
+      - name: Rename artifacts
+        shell: bash
+        run: |
+          VERSION=${{ needs.change-version.outputs.version }}
+          NSIS_DIR="src-tauri/target/${{ matrix.target }}/release/bundle/nsis"
+          for f in "$NSIS_DIR"/*setup*; do
+            [ -f "$f" ] || continue
+            NEW_NAME=$(echo "$(basename "$f")" | sed 's/易翻/yi-fan/g')
+            mv "$f" "$NSIS_DIR/$NEW_NAME"
+          done
+
       - name: Upload NSIS installer
         uses: actions/upload-artifact@v4
         with:
@@ -192,6 +208,19 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm tauri build
+
+      - name: Rename artifacts
+        run: |
+          for dir in deb rpm appimage; do
+            BUNDLE_DIR="src-tauri/target/release/bundle/$dir"
+            [ -d "$BUNDLE_DIR" ] || continue
+            for f in "$BUNDLE_DIR"/*; do
+              [ -f "$f" ] || continue
+              OLD_NAME=$(basename "$f")
+              NEW_NAME=$(echo "$OLD_NAME" | sed 's/易翻/yi-fan/g')
+              [ "$OLD_NAME" != "$NEW_NAME" ] && mv "$f" "$BUNDLE_DIR/$NEW_NAME"
+            done
+          done
 
       - name: Upload deb
         uses: actions/upload-artifact@v4

@@ -11,6 +11,9 @@ export interface HistoryRecord {
   created_at: string
 }
 
+/** Maximum number of history records to keep */
+const MAX_HISTORY_RECORDS = 5000
+
 let db: Database | null = null
 
 async function getDB(): Promise<Database> {
@@ -34,8 +37,23 @@ async function getDB(): Promise<Database> {
         GROUP BY source_text, engine, source_lang, target_lang
       )
     `)
+    // Trim to max limit on startup
+    await trimHistory()
   }
   return db
+}
+
+/** Remove oldest records when exceeding MAX_HISTORY_RECORDS */
+async function trimHistory(): Promise<void> {
+  if (!db) return
+  const count = await getHistoryCount()
+  if (count > MAX_HISTORY_RECORDS) {
+    const excess = count - MAX_HISTORY_RECORDS
+    await db.execute(
+      `DELETE FROM history WHERE id IN (SELECT id FROM history ORDER BY id ASC LIMIT $1)`,
+      [excess]
+    )
+  }
 }
 
 /** Insert a new history record (dedup: same source+engine+langs → update) */
@@ -56,8 +74,8 @@ export async function addHistory(record: Omit<HistoryRecord, 'id' | 'created_at'
   await d.execute(
     'INSERT INTO history (source_text, result_text, engine, source_lang, target_lang) VALUES ($1, $2, $3, $4, $5)',
     [record.source_text, record.result_text, record.engine, record.source_lang, record.target_lang]
-  )
-}
+  )  // Periodically trim to keep DB size bounded
+  await trimHistory()}
 
 /** Get total count of history records */
 export async function getHistoryCount(): Promise<number> {

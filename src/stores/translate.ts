@@ -5,6 +5,8 @@ import { useSettingsStore } from './settings'
 import { invoke } from '@tauri-apps/api/core'
 import { writeText } from '@tauri-apps/plugin-clipboard-manager'
 import { addHistory } from '../services/history'
+import { friendlyError } from '../services/errors'
+import { toNamingFormat } from '../utils/naming'
 
 export interface EngineResult {
   engine: string
@@ -15,13 +17,13 @@ export interface EngineResult {
 }
 
 export const useTranslateStore = defineStore('translate', () => {
-  const mode = ref<'translate' | 'code'>('code')
+  const mode = ref<'translate' | 'code'>('translate')
   const inputText = ref('')
   const outputText = ref('')
   const detectedLang = ref('')
   const activeEngine = ref('google')
   const sourceLang = ref('自动检测')
-  const targetLang = ref('英语')
+  const targetLang = ref('简体中文')
   const activeFormat = ref('camelCase')
   const loading = ref(false)
   const error = ref('')
@@ -37,9 +39,18 @@ export const useTranslateStore = defineStore('translate', () => {
   // ── Dynamic translate (auto-translate on input with debounce) ──
   const dynamicTranslate = ref(true)
 
+  /**
+   * When true, TranslateView must NOT auto-trigger doTranslate.
+   * Used by silentTranslate (划词/剪贴板) so writing inputText won't race
+   * and cancel the clipboard write-back.
+   */
+  const suppressAutoTranslate = ref(false)
+
   // ── Window always on top ──
   const alwaysOnTop = ref(false)
 
+  // ── Race protection: ignore stale responses ──
+  let translateSeq = 0
 
   // ── Code format labels ──
   const codeFormatLabels: Record<string, string> = {
@@ -54,29 +65,30 @@ export const useTranslateStore = defineStore('translate', () => {
 
   const codeFormats = Object.keys(codeFormatLabels)
 
-  // 从 settings 加载用户设置的默认语言 
+  // 从 settings 加载用户设置
   async function initDefaults() {
     const settings = useSettingsStore()
     await settings.init()
-    const savedSrc = settings.getConfig('_translate')['defaultSourceLang']
-    if (savedSrc) sourceLang.value = savedSrc
-    const savedTgt = settings.getConfig('_translate')['defaultTargetLang']
-    if (savedTgt) targetLang.value = savedTgt
-    const savedAutoCopy = settings.getConfig('_translate')['autoCopyMode']
-    if (savedAutoCopy && ['disable', 'source', 'target', 'source_target'].includes(savedAutoCopy)) {
-      autoCopyMode.value = savedAutoCopy as AutoCopyMode
+    const cfg = settings.getConfig('_translate')
+    if (cfg['defaultSourceLang']) sourceLang.value = cfg['defaultSourceLang']
+    if (cfg['defaultTargetLang']) targetLang.value = cfg['defaultTargetLang']
+    if (cfg['autoCopyMode'] && ['disable', 'source', 'target', 'source_target'].includes(cfg['autoCopyMode'])) {
+      autoCopyMode.value = cfg['autoCopyMode'] as AutoCopyMode
     }
-    const savedMulti = settings.getConfig('_translate')['multiEngineMode']
-    if (savedMulti === 'true') multiEngineMode.value = true
-    const savedEngine = settings.getConfig('_translate')['defaultEngine']
-    if (savedEngine) activeEngine.value = savedEngine
+    if (cfg['multiEngineMode'] === 'true') multiEngineMode.value = true
+    if (cfg['multiEngineMode'] === 'false') multiEngineMode.value = false
+    if (cfg['defaultEngine']) activeEngine.value = cfg['defaultEngine']
+    // 恢复动态翻译开关（仅当明确保存过）
+    if (cfg['dynamicTranslate'] === 'false') dynamicTranslate.value = false
+    if (cfg['dynamicTranslate'] === 'true') dynamicTranslate.value = true
   }
 
   function toggleMode() {
     mode.value = mode.value === 'translate' ? 'code' : 'translate'
-    inputText.value = ''
+    // 保留原文，只清空译文与多引擎结果
     outputText.value = ''
     multiEngineResults.value = []
+    error.value = ''
   }
 
   function clearInput() {
@@ -109,7 +121,6 @@ export const useTranslateStore = defineStore('translate', () => {
       await invoke('clipboard_skip_next', { text })
       await writeText(text)
     } catch {
-      // fallback
       try { await navigator.clipboard.writeText(text) } catch { /* ignore */ }
     } finally {
       try { await invoke('resume_clipboard_monitor_temp') } catch { /* ignore */ }
@@ -138,11 +149,18 @@ export const useTranslateStore = defineStore('translate', () => {
       return
     }
 
+    const { isTextTooLong, TEXT_BLOCK_CHARS } = await import('../utils/textLimit')
+    if (isTextTooLong(inputText.value.length)) {
+      error.value = `文本超过 ${TEXT_BLOCK_CHARS} 字上限，请删减后再翻译`
+      return
+    }
+
     const settings = useSettingsStore()
+    const seq = ++translateSeq
 
     // Multi-engine mode
     if (multiEngineMode.value && mode.value === 'translate') {
-      await doMultiTranslate()
+      await doMultiTranslate(seq)
       return
     }
 
@@ -153,11 +171,10 @@ export const useTranslateStore = defineStore('translate', () => {
 
     // 自动检测语言并智能切换目标语言
     if (sourceLang.value === '自动检测' && mode.value === 'translate') {
-      // 先检测语言
       if (!detectedLang.value) {
         await detectInputLang()
       }
-      // 检测到的语言与目标语言相同时，自动切换
+      if (seq !== translateSeq) return
       if (detectedLang.value && detectedLang.value === targetLang.value) {
         const isChinese = detectedLang.value === '简体中文' || detectedLang.value === '繁体中文'
         targetLang.value = isChinese ? '英语' : '简体中文'
@@ -169,53 +186,63 @@ export const useTranslateStore = defineStore('translate', () => {
 
     try {
       const config = settings.getConfig(activeEngine.value)
+      const sourceSnapshot = inputText.value
+      let result = ''
 
       if (mode.value === 'code') {
-        // Code 模式：先翻译成英文，再转格式
         const englishResult = await translate(
           activeEngine.value,
-          inputText.value,
+          sourceSnapshot,
           sourceLang.value,
           '英语',
           config
         )
-        outputText.value = toNamingFormat(englishResult, activeFormat.value)
+        if (seq !== translateSeq) return
+        result = toNamingFormat(englishResult, activeFormat.value)
       } else {
-        outputText.value = await translate(
+        result = await translate(
           activeEngine.value,
-          inputText.value,
+          sourceSnapshot,
           sourceLang.value,
           targetLang.value,
           config
         )
+        if (seq !== translateSeq) return
       }
 
-      // Auto-copy based on mode
-      if (autoCopyMode.value !== 'disable' && outputText.value) {
-        await handleAutoCopy(inputText.value, outputText.value)
+      outputText.value = result
+
+      if (autoCopyMode.value !== 'disable' && result) {
+        await handleAutoCopy(sourceSnapshot, result)
       }
 
-      // Save history
-      if (outputText.value) {
-        await saveToHistory(inputText.value, outputText.value, activeEngine.value)
+      if (result) {
+        await saveToHistory(sourceSnapshot, result, activeEngine.value)
       }
     } catch (err: any) {
-      error.value = err.message || '翻译失败'
+      if (seq !== translateSeq) return
+      error.value = friendlyError(err, '翻译失败')
       outputText.value = ''
     } finally {
-      loading.value = false
+      if (seq === translateSeq) {
+        loading.value = false
+      }
     }
   }
 
   // ── Multi-engine parallel translate ──
-  async function doMultiTranslate() {
+  async function doMultiTranslate(seq?: number) {
+    const requestSeq = seq ?? ++translateSeq
     const settings = useSettingsStore()
     const engines = settings.enabledEngines
 
     if (engines.length === 0) return
 
-    // Initialize results
     const { providers } = await import('../services/translate')
+    const sourceSnapshot = inputText.value
+    const from = sourceLang.value
+    const to = targetLang.value
+
     multiEngineResults.value = engines.map(name => {
       const p = providers.find(pp => pp.name === name)
       return {
@@ -227,86 +254,142 @@ export const useTranslateStore = defineStore('translate', () => {
       }
     })
 
-    // Also set main output from first engine
     loading.value = true
     error.value = ''
+    outputText.value = ''
 
-    // Fire all in parallel
-    const promises = engines.map(async (engineName, idx) => {
+    // Limit concurrency to avoid rate-limits when many engines enabled
+    const CONCURRENCY = 3
+    let cursor = 0
+    const runOne = async (engineName: string, idx: number) => {
       try {
         if (!settings.isConfigured(engineName)) {
+          if (requestSeq !== translateSeq) return
           multiEngineResults.value[idx].loading = false
           multiEngineResults.value[idx].error = '未配置'
           return
         }
         const config = settings.getConfig(engineName)
-        const result = await translate(
-          engineName,
-          inputText.value,
-          sourceLang.value,
-          targetLang.value,
-          config
-        )
+        const result = await translate(engineName, sourceSnapshot, from, to, config)
+        if (requestSeq !== translateSeq) return
         multiEngineResults.value[idx].text = result
         multiEngineResults.value[idx].loading = false
 
-        // First successful result becomes main output
-        if (idx === 0 || !outputText.value) {
+        if (result && !outputText.value) {
           outputText.value = result
         }
       } catch (err: any) {
+        if (requestSeq !== translateSeq) return
         multiEngineResults.value[idx].loading = false
-        multiEngineResults.value[idx].error = err.message || '翻译失败'
+        multiEngineResults.value[idx].error = friendlyError(err, '翻译失败')
       }
-    })
+    }
+    const worker = async () => {
+      while (cursor < engines.length) {
+        const idx = cursor++
+        await runOne(engines[idx], idx)
+      }
+    }
+    await Promise.all(
+      Array.from({ length: Math.min(CONCURRENCY, engines.length) }, () => worker())
+    )
+    if (requestSeq !== translateSeq) return
 
-    await Promise.allSettled(promises)
     loading.value = false
 
-    // Auto-copy first successful result
     if (autoCopyMode.value !== 'disable' && outputText.value) {
-      await handleAutoCopy(inputText.value, outputText.value)
+      await handleAutoCopy(sourceSnapshot, outputText.value)
     }
 
-    // Save first successful result to history
     if (outputText.value) {
-      await saveToHistory(inputText.value, outputText.value, engines[0])
+      const firstOk = multiEngineResults.value.find(r => r.text)
+      await saveToHistory(sourceSnapshot, outputText.value, firstOk?.engine || engines[0])
     }
   }
 
-  // 将英文文本转换为代码命名格式
-  function toNamingFormat(text: string, format: string): string {
-    // 拆词：英文翻译结果 → 单词数组
-    const words = text
-      .replace(/[^\w\s]/g, '') // 去标点
-      .trim()
-      .split(/[\s_\-]+/)
-      .filter(Boolean)
-      .map(w => w.toLowerCase())
+  /**
+   * Silent translate for selection / clipboard:
+   * detect language → translate → **always write result back to clipboard** → history.
+   * Suppresses dynamic auto-translate so it won't race and skip the copy.
+   */
+  async function silentTranslate(
+    text: string,
+    _options: { showWindow?: boolean } = {}
+  ): Promise<{ ok: boolean; result?: string; error?: string }> {
+    const trimmed = text?.trim()
+    if (!trimmed) return { ok: false }
 
-    if (words.length === 0) return text
+    const seq = ++translateSeq
+    // Block TranslateView watchers BEFORE mutating inputText / langs
+    suppressAutoTranslate.value = true
+    try { await invoke('pause_clipboard_monitor_temp') } catch { /* ignore */ }
 
-    switch (format) {
-      case 'camelCase':
-        return words[0] + words.slice(1).map(w => w[0].toUpperCase() + w.slice(1)).join('')
-      case 'PascalCase':
-        return words.map(w => w[0].toUpperCase() + w.slice(1)).join('')
-      case 'snake_case':
-        return words.join('_')
-      case 'kebab-case':
-        return words.join('-')
-      case 'KEBAB-CASE':
-        return words.map(w => w.toUpperCase()).join('-')
-      case 'CONSTANT_CASE':
-        return words.map(w => w.toUpperCase()).join('_')
-      case 'words':
-        return words.join(' ')
-      default:
-        return words[0] + words.slice(1).map(w => w[0].toUpperCase() + w.slice(1)).join('')
+    try {
+      let detected = ''
+      try {
+        detected = await invoke<string>('detect_language', { text: trimmed })
+      } catch { /* ignore */ }
+
+      if (seq !== translateSeq) return { ok: false }
+
+      const isChinese = detected === '简体中文' || detected === '繁体中文'
+      const from = detected || '自动检测'
+      const to = isChinese ? '英语' : '简体中文'
+
+      inputText.value = trimmed
+      sourceLang.value = from
+      targetLang.value = to
+      detectedLang.value = detected
+      if (mode.value === 'code') {
+        mode.value = 'translate'
+        multiEngineResults.value = []
+      }
+
+      const settings = useSettingsStore()
+      await settings.init()
+      const engineName = activeEngine.value
+      const config = settings.getConfig(engineName)
+
+      if (!settings.isConfigured(engineName)) {
+        error.value = '请先在设置中配置该翻译引擎的 API Key'
+        return { ok: false, error: error.value }
+      }
+
+      loading.value = true
+      error.value = ''
+
+      try {
+        const result = await translate(engineName, trimmed, from, to, config)
+
+        // 译文写回剪贴板是静默翻译的核心行为：即使 UI 请求序号已变，也必须执行
+        if (result) {
+          await copyToClipboard(result)
+          try {
+            await saveToHistory(trimmed, result, engineName)
+          } catch { /* ignore */ }
+        }
+
+        // 仅在仍是最新请求时更新界面
+        if (seq === translateSeq) {
+          outputText.value = result || ''
+          loading.value = false
+        }
+
+        return { ok: !!result, result: result || undefined }
+      } catch (err: any) {
+        const msg = friendlyError(err, '翻译失败')
+        if (seq === translateSeq) {
+          error.value = msg
+          loading.value = false
+        }
+        return { ok: false, error: msg }
+      }
+    } finally {
+      suppressAutoTranslate.value = false
+      try { await invoke('resume_clipboard_monitor_temp') } catch { /* ignore */ }
     }
   }
 
-  // Auto-copy handler: copies based on current mode
   async function handleAutoCopy(source: string, target: string) {
     let textToCopy = ''
     switch (autoCopyMode.value) {
@@ -322,11 +405,9 @@ export const useTranslateStore = defineStore('translate', () => {
       default:
         return
     }
-    // copyToClipboard already handles pause/resume of clipboard monitor
     await copyToClipboard(textToCopy)
   }
 
-  // Cycle auto-copy mode: disable → target → source → source_target → disable
   async function cycleAutoCopyMode() {
     const modes: AutoCopyMode[] = ['disable', 'target', 'source', 'source_target']
     const idx = modes.indexOf(autoCopyMode.value)
@@ -336,7 +417,6 @@ export const useTranslateStore = defineStore('translate', () => {
     await settings.save()
   }
 
-  // Toggle multi-engine mode
   async function toggleMultiEngine() {
     multiEngineMode.value = !multiEngineMode.value
     const settings = useSettingsStore()
@@ -344,32 +424,28 @@ export const useTranslateStore = defineStore('translate', () => {
     await settings.save()
   }
 
-  // ── Reverse translate: swap source/target, translate outputText back ──
   async function reverseTranslate() {
     if (!outputText.value.trim()) return
     const oldOutput = outputText.value
     const oldSource = sourceLang.value
     const oldTarget = targetLang.value
 
-    // Swap
     inputText.value = oldOutput
-    sourceLang.value = oldTarget === '自动检测' ? oldTarget : oldTarget
+    sourceLang.value = oldTarget
     targetLang.value = oldSource === '自动检测' ? '简体中文' : oldSource
 
     await doTranslate()
   }
 
-  // ── Delete newlines: clean up PDF-copied text ──
   function deleteNewlines() {
     if (!inputText.value.trim()) return
     inputText.value = inputText.value
-      .replace(/-\s*\n/g, '')     // hyphenated line breaks
-      .replace(/\n+/g, ' ')       // newlines → space
-      .replace(/\s{2,}/g, ' ')    // collapse multiple spaces
+      .replace(/-\s*\n/g, '')
+      .replace(/\n+/g, ' ')
+      .replace(/\s{2,}/g, ' ')
       .trim()
   }
 
-  // ── Toggle dynamic translate ──
   async function toggleDynamicTranslate() {
     dynamicTranslate.value = !dynamicTranslate.value
     const settings = useSettingsStore()
@@ -377,26 +453,29 @@ export const useTranslateStore = defineStore('translate', () => {
     await settings.save()
   }
 
-  // ── Cycle code naming format (Alt+Shift+U) ──
   async function cycleCodeFormat() {
     if (!outputText.value.trim()) return
 
-    // Cycle to next format
     const idx = codeFormats.indexOf(activeFormat.value)
     activeFormat.value = codeFormats[(idx + 1) % codeFormats.length]
 
-    // Format the current output text and copy to clipboard
     const formatted = toNamingFormat(outputText.value, activeFormat.value)
+    outputText.value = formatted
     await copyToClipboard(formatted)
-    console.log(`[code-format] ${activeFormat.value}: ${formatted}`)
   }
 
-
-  // ── Toggle always on top ──
   async function toggleAlwaysOnTop() {
     const { getCurrentWindow } = await import('@tauri-apps/api/window')
     alwaysOnTop.value = !alwaysOnTop.value
     await getCurrentWindow().setAlwaysOnTop(alwaysOnTop.value)
+    try {
+      const { saveWindowState } = await import('../services/windowState')
+      await saveWindowState({ alwaysOnTop: alwaysOnTop.value })
+    } catch { /* ignore */ }
+  }
+
+  function setAlwaysOnTopState(v: boolean) {
+    alwaysOnTop.value = v
   }
 
   return {
@@ -414,11 +493,13 @@ export const useTranslateStore = defineStore('translate', () => {
     multiEngineMode,
     autoCopyMode,
     dynamicTranslate,
+    suppressAutoTranslate,
     alwaysOnTop,
     toggleMode,
     clearInput,
     doTranslate,
     doMultiTranslate,
+    silentTranslate,
     initDefaults,
     detectInputLang,
     copyToClipboard,
@@ -429,6 +510,7 @@ export const useTranslateStore = defineStore('translate', () => {
     deleteNewlines,
     toggleDynamicTranslate,
     toggleAlwaysOnTop,
+    setAlwaysOnTopState,
     codeFormatLabels,
     cycleCodeFormat,
   }

@@ -22,10 +22,14 @@ import AppFooter from '../components/AppFooter.vue'
   overflow: hidden;
 }
 
+/* Overlay titlebar: full-width drag strip under traffic lights */
 .drag-region {
-  height: 28px;
+  height: 38px;
   flex-shrink: 0;
   -webkit-app-region: drag;
+  /* leave space for macOS traffic lights on the left */
+  margin-left: 0;
+  padding-left: 72px;
 }
 
 .app-main {

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Launchpad / Finder / Dock 显示名称 -->
+	<key>CFBundleDisplayName</key>
+	<string>易翻</string>
+	<key>CFBundleName</key>
+	<string>易翻</string>
+</dict>
+</plist>

@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { Message } from '@arco-design/web-vue'
 import { speak, speakingSource } from '../services/tts'
 import { useTranslateStore } from '../stores/translate'
+import { TEXT_BLOCK_CHARS, TEXT_WARN_CHARS, isTextTooLong } from '../utils/textLimit'
 
 const store = useTranslateStore()
 
@@ -18,6 +20,21 @@ const emit = defineEmits<{
 }>()
 
 const speaking = computed(() => speakingSource.value === 'input')
+
+const charCount = computed(() => props.modelValue.length)
+const isLongText = computed(() => charCount.value >= TEXT_WARN_CHARS)
+const isVeryLong = computed(() => isTextTooLong(charCount.value))
+
+function onInput(e: Event) {
+  const el = e.target as HTMLTextAreaElement
+  let v = el.value
+  if (v.length > TEXT_BLOCK_CHARS) {
+    v = v.slice(0, TEXT_BLOCK_CHARS)
+    el.value = v
+    Message.warning(`最多输入 ${TEXT_BLOCK_CHARS} 字，已自动截断`)
+  }
+  emit('update:modelValue', v)
+}
 
 async function handleSpeak() {
   if (!props.modelValue.trim()) return
@@ -37,6 +54,10 @@ function handleKeydown(e: KeyboardEvent) {
   // Enter = translate, Shift+Enter = newline
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
+    if (isTextTooLong(props.modelValue.length)) {
+      Message.error(`文本超过 ${TEXT_BLOCK_CHARS} 字上限，请删减后再翻译`)
+      return
+    }
     store.doTranslate()
   }
 }
@@ -48,7 +69,8 @@ function handleKeydown(e: KeyboardEvent) {
       :value="modelValue"
       class="text-area"
       :placeholder="mode === 'translate' ? '请输入要翻译的文本... (Enter 翻译, Shift+Enter 换行)' : '请输入要转换的文本...'"
-      @input="emit('update:modelValue', ($event.target as HTMLTextAreaElement).value)"
+      :maxlength="TEXT_BLOCK_CHARS"
+      @input="onInput"
       @keydown="handleKeydown"
     ></textarea>
     <div class="input-footer">
@@ -71,6 +93,14 @@ function handleKeydown(e: KeyboardEvent) {
       </button>
       <span v-if="detectedLang" class="detected-lang">
         检测到: {{ detectedLang }}
+      </span>
+      <span
+        v-if="charCount > 0"
+        class="char-count"
+        :class="{ warn: isLongText, danger: isVeryLong }"
+        :title="isVeryLong ? '文本过长，部分引擎可能失败或截断' : isLongText ? '较长文本，翻译可能较慢' : '字符数'"
+      >
+        {{ charCount }}/{{ TEXT_BLOCK_CHARS }}{{ isVeryLong ? ' · 已达上限' : isLongText ? ' · 较长' : '' }}
       </span>
       <div class="spacer"></div>
       <button
@@ -136,6 +166,21 @@ function handleKeydown(e: KeyboardEvent) {
 .detected-lang {
   font-size: var(--font-size-xs);
   color: var(--color-text-placeholder);
+}
+
+.char-count {
+  font-size: 11px;
+  color: var(--color-text-placeholder);
+  font-variant-numeric: tabular-nums;
+}
+
+.char-count.warn {
+  color: var(--color-warning);
+}
+
+.char-count.danger {
+  color: var(--color-danger);
+  font-weight: 600;
 }
 
 .spacer {

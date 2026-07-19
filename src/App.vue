@@ -3,73 +3,80 @@ import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { listen } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
+import { Message } from '@arco-design/web-vue'
 import { useTranslateStore } from './stores/translate'
-import { translate } from './services/translate'
 import { useSettingsStore } from './stores/settings'
-import { addHistory } from './services/history'
+import { registerAllHotkeys } from './services/hotkeys'
+import {
+  getAutoCheck,
+  getSkippedVersion,
+  checkForUpdates,
+} from './services/update'
+import { initWindowStatePersistence } from './services/windowState'
 
 const router = useRouter()
 const store = useTranslateStore()
 
 onMounted(async () => {
-  // 1. 划词翻译：自动检测语言 → 中文翻英文，其他翻中文 → 自动复制译文
+  const settings = useSettingsStore()
+  await settings.init()
+  await store.initDefaults()
+
+  // 窗口位置 / 大小 / 置顶记忆
+  try {
+    const ws = await initWindowStatePersistence()
+    if (ws?.alwaysOnTop) store.setAlwaysOnTopState(true)
+  } catch {
+    /* ignore */
+  }
+
+  // ── 全局快捷键：仅从 settings 注册（单源） ──
+  try {
+    const savedHotkeys = settings.getConfig('_hotkeys')
+    const failCount = await registerAllHotkeys(savedHotkeys)
+    if (failCount > 0) {
+      console.warn(`[hotkeys] ${failCount} shortcut(s) failed to register`)
+    }
+  } catch (e) {
+    console.error('[hotkeys] bootstrap failed:', e)
+  }
+
+  // ── 启动静默检查更新（ccMesh 同款：有新版本再提示） ──
+  setTimeout(async () => {
+    try {
+      if (!(await getAutoCheck())) return
+      const info = await checkForUpdates()
+      if (!info.available) return
+      const skipped = await getSkippedVersion()
+      if (skipped && skipped === info.version) return
+      const { setAvailableUpdateVersion } = await import('./services/update')
+      await setAvailableUpdateVersion(info.version)
+      Message.info({
+        id: 'update-available',
+        content: `发现新版本 v${info.version}，可在设置 → 关于 中更新`,
+        duration: 6000,
+      })
+    } catch {
+      /* 网络失败静默忽略 */
+    }
+  }, 4000)
+
+  // Sync OCR settings to Rust backend
+  {
+    const ocrCfg = settings.getConfig('_ocr')
+    try {
+      await invoke('set_ocr_hide_window', { enabled: ocrCfg['hideWindow'] === 'true' })
+      await invoke('set_close_on_blur', { enabled: ocrCfg['closeOnBlur'] === 'true' })
+    } catch { /* ignore in browser */ }
+  }
+
+  // 1. 划词翻译（静默：复制结果 + 轻提示）
   await listen<string>('selection-text', async (event) => {
-    const text = event.payload
-    if (!text || !text.trim()) return
-
-    // 暂停剪贴板监听，防止翻译期间干扰
-    try { await invoke('pause_clipboard_monitor_temp') } catch { /* ignore */ }
-
-    // 检测语言
-    let detectedLang = ''
-    try {
-      detectedLang = await invoke<string>('detect_language', { text })
-    } catch { /* ignore */ }
-
-    // 中文 → 英文，其他 → 中文
-    const isChinese = detectedLang === '简体中文' || detectedLang === '繁体中文'
-    const sourceLang = detectedLang || '自动检测'
-    const targetLang = isChinese ? '英语' : '简体中文'
-
-    // 更新 store（静默翻译，不弹窗）
-    store.inputText = text.trim()
-    store.sourceLang = sourceLang
-    store.targetLang = targetLang
-    store.detectedLang = detectedLang
-    if (store.mode === 'code') store.toggleMode()
-
-    // 翻译
-    const settings = useSettingsStore()
-    await settings.init()
-    const engineName = store.activeEngine
-    const config = settings.getConfig(engineName)
-
-    try {
-      store.loading = true
-      store.error = ''
-      const result = await translate(engineName, text.trim(), sourceLang, targetLang, config)
-      store.outputText = result
-
-      // 自动复制译文到剪贴板
-      if (result) {
-        await store.copyToClipboard(result)
-
-        // 保存历史
-        try {
-          await addHistory({
-            source_text: text.trim(),
-            result_text: result,
-            engine: engineName,
-            source_lang: sourceLang,
-            target_lang: targetLang,
-          })
-        } catch { /* ignore */ }
-      }
-    } catch (err: any) {
-      store.error = err.message || '翻译失败'
-    } finally {
-      store.loading = false
-      try { await invoke('resume_clipboard_monitor_temp') } catch { /* ignore */ }
+    const res = await store.silentTranslate(event.payload)
+    if (res.ok) {
+      Message.success({ content: '已翻译并复制', duration: 1500 })
+    } else if (res.error) {
+      Message.error({ content: res.error, duration: 2500 })
     }
   })
 
@@ -85,81 +92,26 @@ onMounted(async () => {
       store.inputText = text
       if (store.mode === 'code') store.toggleMode()
       router.push('/')
-      // 自动翻译 OCR 识别的文字
       await store.doTranslate()
     }
   })
 
-  // 4. 剪贴板监听：自动检测语言 → 中文翻译成英文，其他语言翻译成中文
+  // 4. 剪贴板监听 → 静默翻译并回到主页
   await listen<string>('clipboard-text', async (event) => {
-    const text = event.payload
-    if (!text || !text.trim()) return
-
-    // Pause clipboard monitoring during translation to prevent infinite loop
-    try { await invoke('pause_clipboard_monitor_temp') } catch { /* ignore */ }
-
-    // Detect language via Rust lingua
-    let detectedLang = ''
-    try {
-      detectedLang = await invoke<string>('detect_language', { text })
-    } catch { /* ignore */ }
-
-    // Smart language switching:
-    // Chinese → translate to English
-    // Anything else → translate to Chinese
-    const isChinese = detectedLang === '简体中文' || detectedLang === '繁体中文'
-    const sourceLang = detectedLang || '自动检测'
-    const targetLang = isChinese ? '英语' : '简体中文'
-
-    // Update store UI
-    store.inputText = text.trim()
-    store.sourceLang = sourceLang
-    store.targetLang = targetLang
-    store.detectedLang = detectedLang
-    if (store.mode === 'code') store.toggleMode()
     router.push('/')
-
-    // Auto-translate with the first enabled engine
-    const settings = useSettingsStore()
-    await settings.init()
-    const engineName = store.activeEngine
-    const config = settings.getConfig(engineName)
-
-    try {
-      store.loading = true
-      store.error = ''
-      const result = await translate(engineName, text.trim(), sourceLang, targetLang, config)
-      store.outputText = result
-
-      // Auto-copy the result back to clipboard (copyToClipboard handles skip internally)
-      if (result) {
-        await store.copyToClipboard(result)
-
-        // Save to history
-        try {
-          await addHistory({
-            source_text: text.trim(),
-            result_text: result,
-            engine: engineName,
-            source_lang: sourceLang,
-            target_lang: targetLang,
-          })
-        } catch { /* ignore */ }
-      }
-    } catch (err: any) {
-      store.error = err.message || '翻译失败'
-    } finally {
-      store.loading = false
-      // Resume clipboard monitoring
-      try { await invoke('resume_clipboard_monitor_temp') } catch { /* ignore */ }
+    const res = await store.silentTranslate(event.payload)
+    if (res.ok) {
+      Message.success({ content: '剪贴板已翻译并复制', duration: 1500 })
+    } else if (res.error) {
+      Message.error({ content: res.error, duration: 2500 })
     }
   })
 
-  // 5. Alt+Shift+U → 循环转换代码命名格式
+  // 5. 代码命名格式循环
   await listen('cycle-code-format', async () => {
     await store.cycleCodeFormat()
     const label = store.codeFormatLabels[store.activeFormat] || store.activeFormat
-    console.log(`[code-format] Cycled to: ${store.activeFormat} (${label})`)
+    Message.info({ content: `命名格式: ${label}`, duration: 1200 })
   })
 
   // 6. 托盘菜单 → 导航
@@ -168,11 +120,19 @@ onMounted(async () => {
     if (path) router.push(path)
   })
 
-  // 6. 托盘菜单 → 剪贴板监听 toggle
+  // 托盘「检查更新」→ 打开设置关于页
+  await listen('open-settings-about', () => {
+    try {
+      sessionStorage.setItem('yi-fan-settings-page', 'about')
+    } catch { /* ignore */ }
+    router.push('/settings')
+  })
+
+  // 7. 托盘菜单 → 剪贴板监听 toggle
   await listen('tray-clipboard-toggle', async () => {
     try {
-      const settings = useSettingsStore()
       await settings.init()
+      // 仅当明确为 true 时视为开启
       const current = settings.getConfig('_clipboard')['enabled'] === 'true'
       const newState = !current
       if (newState) {
@@ -183,21 +143,30 @@ onMounted(async () => {
       settings.setConfig('_clipboard', 'enabled', String(newState))
       await settings.save()
 
-      // Sync AppFooter clipboard button state
       const { emit } = await import('@tauri-apps/api/event')
       await emit('clipboard-monitor-state', newState)
+      Message.info({ content: newState ? '剪贴板监听已开启' : '剪贴板监听已关闭', duration: 1500 })
     } catch (e) {
       console.error('Tray clipboard toggle failed:', e)
     }
   })
-  // 7. Sync OCR settings to Rust backend on startup
-  {
-    const settings = useSettingsStore()
-    await settings.init()
-    const ocrCfg = settings.getConfig('_ocr')
-    await invoke('set_ocr_hide_window', { enabled: ocrCfg['hideWindow'] === 'true' })
-    await invoke('set_close_on_blur', { enabled: ocrCfg['closeOnBlur'] === 'true' })
-  }
+
+  // 8. 快捷键 toggle_clipboard_monitor 时同步持久化（AppFooter 在设置页会卸载）
+  await listen<boolean>('clipboard-monitor-toggled', async (event) => {
+    try {
+      await settings.init()
+      settings.setConfig('_clipboard', 'enabled', String(event.payload))
+      await settings.save()
+      const { emit } = await import('@tauri-apps/api/event')
+      await emit('clipboard-monitor-state', event.payload)
+      Message.info({
+        content: event.payload ? '剪贴板监听已开启' : '剪贴板监听已关闭',
+        duration: 1500,
+      })
+    } catch (e) {
+      console.warn('Persist clipboard state failed:', e)
+    }
+  })
 })
 </script>
 

@@ -1,5 +1,5 @@
 // Volcengine OCR Provider — calls ByteDance Volcengine OCR API
-import { fetch } from '@tauri-apps/plugin-http'
+import { fetchWithTimeout as fetch } from '../utils/fetchWithTimeout'
 import type { OcrProvider } from '../types'
 
 const langMap: Record<string, string> = {

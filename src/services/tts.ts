@@ -1,7 +1,7 @@
 // ── TTS 语音朗读服务 ──
 // 使用 Lingva API（和 pot-desktop 一致），备选 Web Speech API
 
-import { fetch } from '@tauri-apps/plugin-http'
+import { fetchWithTimeout as fetch } from './translate/utils/fetchWithTimeout'
 import { ref } from 'vue'
 
 // Lingva TTS 语言映射

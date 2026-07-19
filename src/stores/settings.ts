@@ -14,21 +14,33 @@ export const useSettingsStore = defineStore('settings', () => {
   const enabledEngines = ref<string[]>([...DEFAULT_ENABLED])
 
   let storeInstance: Awaited<ReturnType<typeof load>> | null = null
+  let initPromise: Promise<void> | null = null
 
   async function init() {
-    try {
-      storeInstance = await load('settings.json', { autoSave: true } as any)
-      const saved = await storeInstance.get<Record<string, Record<string, string>>>('configs')
-      if (saved) {
-        configs.value = saved
+    // Prevent redundant initialization: return existing promise if already in progress
+    if (initPromise) return initPromise
+    if (storeInstance) return
+
+    initPromise = (async () => {
+      try {
+        storeInstance = await load('settings.json', { autoSave: true } as any)
+        const saved = await storeInstance.get<Record<string, Record<string, string>>>('configs')
+        if (saved) {
+          configs.value = saved
+        }
+        const savedEnabled = await storeInstance.get<string[]>('enabledEngines')
+        if (savedEnabled && savedEnabled.length > 0) {
+          enabledEngines.value = savedEnabled
+        }
+      } catch (e) {
+        console.warn('Settings init failed (expected in browser):', e)
+        // Reset so it can be retried
+        storeInstance = null
+      } finally {
+        initPromise = null
       }
-      const savedEnabled = await storeInstance.get<string[]>('enabledEngines')
-      if (savedEnabled && savedEnabled.length > 0) {
-        enabledEngines.value = savedEnabled
-      }
-    } catch (e) {
-      console.warn('Settings init failed (expected in browser):', e)
-    }
+    })()
+    return initPromise
   }
 
   async function save() {

@@ -1,43 +1,83 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   getHistory,
   getHistoryCount,
-  searchHistory,
+  getHistoryEngines,
   deleteHistory,
   clearHistory,
-  exportHistory,
+  toggleStarHistory,
   type HistoryRecord,
+  type HistoryQuery,
 } from '../services/history'
 import { useTranslateStore } from '../stores/translate'
+import { providers } from '../services/translate'
 
 const router = useRouter()
 const store = useTranslateStore()
 
 const records = ref<HistoryRecord[]>([])
 const searchKeyword = ref('')
+const filterEngine = ref('')
+const filterDate = ref('')
+const starredOnly = ref(false)
+const engineOptions = ref<string[]>([])
 const loading = ref(true)
 const showClearConfirm = ref(false)
+const selectedIds = ref<Set<number>>(new Set())
+const selectAllPage = computed({
+  get: () =>
+    records.value.length > 0 &&
+    records.value.every((r) => r.id != null && selectedIds.value.has(r.id)),
+  set: (v: boolean) => {
+    if (v) {
+      const next = new Set(selectedIds.value)
+      for (const r of records.value) if (r.id != null) next.add(r.id)
+      selectedIds.value = next
+    } else {
+      const next = new Set(selectedIds.value)
+      for (const r of records.value) if (r.id != null) next.delete(r.id)
+      selectedIds.value = next
+    }
+  },
+})
 
-// ── 分页 ──
 const pageSize = 10
 const currentPage = ref(1)
 const totalCount = ref(0)
 const totalPages = computed(() => Math.max(1, Math.ceil(totalCount.value / pageSize)))
-const isSearching = ref(false)
+const hasActiveFilter = computed(
+  () => !!(searchKeyword.value.trim() || filterEngine.value || filterDate.value || starredOnly.value)
+)
+
+function engineLabel(name: string) {
+  return providers.find((p) => p.name === name)?.label || name
+}
+
+function buildQuery(): HistoryQuery {
+  return {
+    keyword: searchKeyword.value.trim() || undefined,
+    engine: filterEngine.value || undefined,
+    date: filterDate.value || undefined,
+    starredOnly: starredOnly.value || undefined,
+  }
+}
 
 onMounted(async () => {
+  try {
+    engineOptions.value = await getHistoryEngines()
+  } catch { /* ignore */ }
   await loadRecords()
 })
 
 async function loadRecords() {
   loading.value = true
   try {
-    totalCount.value = await getHistoryCount()
+    const q = buildQuery()
+    totalCount.value = await getHistoryCount(q)
     const offset = (currentPage.value - 1) * pageSize
-    records.value = await getHistory(pageSize, offset)
-    isSearching.value = false
+    records.value = await getHistory(pageSize, offset, q)
   } catch (e) {
     console.warn('Load history failed:', e)
   } finally {
@@ -45,22 +85,19 @@ async function loadRecords() {
   }
 }
 
-async function doSearch() {
-  loading.value = true
-  try {
-    if (searchKeyword.value.trim()) {
-      records.value = await searchHistory(searchKeyword.value)
-      isSearching.value = true
-    } else {
-      currentPage.value = 1
-      await loadRecords()
-    }
-  } catch (e) {
-    console.warn('Search failed:', e)
-  } finally {
-    loading.value = false
-  }
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+function onFilterChange() {
+  if (searchTimer) clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => {
+    currentPage.value = 1
+    loadRecords()
+  }, 200)
 }
+
+watch([filterEngine, filterDate, starredOnly], () => {
+  currentPage.value = 1
+  loadRecords()
+})
 
 function goToPage(page: number) {
   if (page < 1 || page > totalPages.value) return
@@ -70,11 +107,19 @@ function goToPage(page: number) {
 
 async function handleDelete(id: number) {
   await deleteHistory(id)
-  records.value = records.value.filter(r => r.id !== id)
+  records.value = records.value.filter((r) => r.id !== id)
   totalCount.value = Math.max(0, totalCount.value - 1)
-  // 当前页空了且不是第一页，回到前一页
   if (records.value.length === 0 && currentPage.value > 1) {
     currentPage.value--
+    await loadRecords()
+  }
+}
+
+async function handleToggleStar(record: HistoryRecord) {
+  if (!record.id) return
+  const starred = await toggleStarHistory(record.id)
+  record.starred = starred ? 1 : 0
+  if (starredOnly.value && !starred) {
     await loadRecords()
   }
 }
@@ -85,11 +130,15 @@ async function handleClearAll() {
   totalCount.value = 0
   currentPage.value = 1
   showClearConfirm.value = false
+  engineOptions.value = []
 }
 
 async function handleExport() {
   try {
-    const json = await exportHistory()
+    // Export current filter (up to 2000 rows), not only current page
+    const q = buildQuery()
+    const list = await getHistory(2000, 0, q)
+    const json = JSON.stringify(list, null, 2)
     const blob = new Blob([json], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -102,6 +151,23 @@ async function handleExport() {
   }
 }
 
+function toggleSelect(id: number) {
+  const next = new Set(selectedIds.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  selectedIds.value = next
+}
+
+async function handleDeleteSelected() {
+  if (selectedIds.value.size === 0) return
+  const ids = [...selectedIds.value]
+  for (const id of ids) {
+    await deleteHistory(id)
+  }
+  selectedIds.value = new Set()
+  await loadRecords()
+}
+
 function copyText(text: string) {
   store.copyToClipboard(text)
 }
@@ -112,6 +178,15 @@ function useAsInput(text: string) {
 
 function goBack() {
   router.push('/')
+}
+
+function clearFilters() {
+  searchKeyword.value = ''
+  filterEngine.value = ''
+  filterDate.value = ''
+  starredOnly.value = false
+  currentPage.value = 1
+  loadRecords()
 }
 </script>
 
@@ -136,20 +211,50 @@ function goBack() {
           v-model="searchKeyword"
           class="search-input"
           placeholder="搜索历史记录..."
-          @input="doSearch"
+          @input="onFilterChange"
         />
-        <button v-if="searchKeyword" class="clear-search" @click="searchKeyword = ''; doSearch()">
+        <button v-if="searchKeyword" class="clear-search" @click="searchKeyword = ''; onFilterChange()">
           <i class="ph ph-x"></i>
         </button>
       </div>
       <div class="toolbar-btns">
-        <button class="toolbar-btn" @click="handleExport" :disabled="records.length === 0">
-          <i class="ph ph-download-simple"></i> 导出
+        <button
+          class="toolbar-btn"
+          :disabled="selectedIds.size === 0"
+          title="删除选中"
+          @click="handleDeleteSelected"
+        >
+          <i class="ph ph-trash"></i> 删除选中 ({{ selectedIds.size }})
         </button>
-        <button class="toolbar-btn danger" @click="showClearConfirm = true" :disabled="records.length === 0">
+        <button class="toolbar-btn" @click="handleExport" :disabled="totalCount === 0 && records.length === 0">
+          <i class="ph ph-download-simple"></i> 导出筛选
+        </button>
+        <button class="toolbar-btn danger" @click="showClearConfirm = true" :disabled="totalCount === 0">
           <i class="ph ph-trash"></i> 清空
         </button>
       </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="history-filters">
+      <select v-model="filterEngine" class="filter-select">
+        <option value="">全部引擎</option>
+        <option v-for="e in engineOptions" :key="e" :value="e">{{ engineLabel(e) }}</option>
+      </select>
+      <input v-model="filterDate" type="date" class="filter-date" title="按日期筛选" />
+      <button
+        type="button"
+        class="filter-star"
+        :class="{ active: starredOnly }"
+        title="仅收藏"
+        @click="starredOnly = !starredOnly"
+      >
+        <i class="ph" :class="starredOnly ? 'ph-star-fill' : 'ph-star'"></i>
+        收藏
+      </button>
+      <button v-if="hasActiveFilter" type="button" class="filter-clear" @click="clearFilters">
+        清除筛选
+      </button>
     </div>
 
     <!-- Clear confirmation -->
@@ -165,9 +270,19 @@ function goBack() {
         <i class="ph ph-clock-counter-clockwise"></i>
         <span>暂无历史记录</span>
       </div>
-      <div v-for="record in records" :key="record.id" class="history-card">
+      <label v-if="records.length > 0" class="select-all-row">
+        <input v-model="selectAllPage" type="checkbox" />
+        <span>本页全选</span>
+      </label>
+      <div v-for="record in records" :key="record.id" class="history-card" :class="{ starred: record.starred }">
         <div class="card-meta">
-          <span class="meta-engine">{{ record.engine }}</span>
+          <input
+            type="checkbox"
+            class="card-check"
+            :checked="record.id != null && selectedIds.has(record.id)"
+            @change="record.id != null && toggleSelect(record.id)"
+          />
+          <span class="meta-engine">{{ engineLabel(record.engine) }}</span>
           <span class="meta-langs">{{ record.source_lang }} → {{ record.target_lang }}</span>
           <span class="meta-time">{{ record.created_at }}</span>
         </div>
@@ -177,6 +292,14 @@ function goBack() {
           <div class="card-result">{{ record.result_text }}</div>
         </div>
         <div class="card-actions">
+          <button
+            class="card-btn"
+            :class="{ starred: record.starred }"
+            :title="record.starred ? '取消收藏' : '收藏'"
+            @click="handleToggleStar(record)"
+          >
+            <i class="ph" :class="record.starred ? 'ph-star-fill' : 'ph-star'"></i>
+          </button>
           <button class="card-btn" @click="copyText(record.result_text)" title="复制译文">
             <i class="ph ph-copy"></i>
           </button>
@@ -191,7 +314,7 @@ function goBack() {
     </div>
 
     <!-- 分页（固定底部） -->
-    <div v-if="!isSearching && totalCount > pageSize" class="pagination-bar">
+    <div v-if="totalCount > pageSize" class="pagination-bar">
       <a-pagination
         :total="totalCount"
         :current="currentPage"
@@ -223,11 +346,12 @@ function goBack() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 16px;
-  height: 40px;
+  padding: 10px 16px 8px 78px;
+  min-height: 44px;
   flex-shrink: 0;
   border-bottom: 1px solid var(--color-border-light);
   -webkit-app-region: drag;
+  background: var(--color-bg-page);
 }
 
 .header-title {
@@ -257,8 +381,75 @@ function goBack() {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 16px;
+  padding: 10px 16px 6px;
   flex-shrink: 0;
+}
+
+.history-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px 10px;
+  flex-shrink: 0;
+}
+
+.select-all-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin-bottom: 6px;
+  cursor: pointer;
+}
+
+.card-check {
+  margin-right: 4px;
+  cursor: pointer;
+}
+
+.filter-select,
+.filter-date {
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 12px;
+}
+
+.filter-star {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.filter-star.active {
+  color: #F7BA1E;
+  border-color: rgba(247, 186, 30, 0.5);
+  background: rgba(247, 186, 30, 0.1);
+}
+
+.filter-clear {
+  font-size: 12px;
+  color: var(--color-primary);
+  padding: 4px 8px;
+}
+
+.card-btn.starred {
+  color: #F7BA1E;
+}
+
+.history-card.starred {
+  border-color: rgba(247, 186, 30, 0.35);
 }
 
 .search-box {
@@ -438,6 +629,7 @@ function goBack() {
   color: var(--color-text-secondary);
   line-height: 1.5;
   word-break: break-word;
+  white-space: pre-wrap;
 }
 
 .card-arrow {
@@ -454,6 +646,7 @@ function goBack() {
   font-weight: 500;
   line-height: 1.5;
   word-break: break-word;
+  white-space: pre-wrap;
 }
 
 .card-actions {

@@ -37,11 +37,14 @@ watch(
 
 // ── Auto-translate with debounce ──
 const debouncedTranslate = useDebounceFn(() => {
+  // 划词/剪贴板静默翻译期间禁止再触发，避免抢 seq 导致不写回剪贴板
+  if (store.suppressAutoTranslate) return
   store.doTranslate()
 }, 600)
 
 // ── Language detection with debounce ──
 const debouncedDetect = useDebounceFn(() => {
+  if (store.suppressAutoTranslate) return
   store.detectInputLang()
 }, 400)
 
@@ -49,6 +52,7 @@ const debouncedDetect = useDebounceFn(() => {
 watch(
   () => store.inputText,
   () => {
+    if (store.suppressAutoTranslate) return
     debouncedDetect()
     if (store.dynamicTranslate) {
       debouncedTranslate()
@@ -59,6 +63,7 @@ watch(
 watch(
   () => [store.activeEngine, store.sourceLang, store.targetLang, store.activeFormat, store.mode],
   () => {
+    if (store.suppressAutoTranslate) return
     if (store.inputText.trim()) {
       debouncedTranslate()
     }

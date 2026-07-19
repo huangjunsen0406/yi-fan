@@ -6,17 +6,33 @@ import { getVersion } from '@tauri-apps/api/app'
 import { useSettingsStore } from '../stores/settings'
 import { providers, getProvider } from '../services/translate'
 import { ocrProviders, getOcrProvider } from '../services/ocr'
-import { register, unregister, unregisterAll, isRegistered } from '@tauri-apps/plugin-global-shortcut'
-import { enable as enableAutostart, disable as disableAutostart, isEnabled as isAutostartEnabled } from '@tauri-apps/plugin-autostart'
 import { Message } from '@arco-design/web-vue'
+import {
+  HOTKEY_DEFS,
+  DEFAULT_HOTKEYS,
+  registerAllHotkeys,
+  registerOneHotkey,
+  unregisterAllHotkeys,
+} from '../services/hotkeys'
+import { getAvailableUpdateVersion } from '../services/update'
+import { initTheme } from '../services/theme'
+import AboutPanel from './settings/AboutPanel.vue'
 
 const router = useRouter()
 const settings = useSettingsStore()
 const appVersion = ref('0.0.0')
+const updateBadgeVersion = ref('')
 
 // ── 一级导航 ──
 type PageKey = 'hotkey' | 'translate' | 'ocr' | 'service' | 'about'
-const activePage = ref<PageKey>('hotkey')
+const activePage = ref<PageKey>(
+  (typeof sessionStorage !== 'undefined' &&
+    (sessionStorage.getItem('yi-fan-settings-page') as PageKey)) ||
+    'hotkey'
+)
+if (typeof sessionStorage !== 'undefined') {
+  sessionStorage.removeItem('yi-fan-settings-page')
+}
 
 const sidebarItems: { key: PageKey; icon: string; label: string }[] = [
   { key: 'hotkey',    icon: 'ph-keyboard',   label: '快捷键' },
@@ -62,7 +78,6 @@ const ocrAutoCopy = ref(false)
 const ocrAutoTranslate = ref(false)
 const ocrHideWindow = ref(false)
 const ocrCloseOnBlur = ref(false)
-const autoStartEnabled = ref(false)
 const showOcrLangDrop = ref(false)
 const showOcrEngineDrop = ref(false)
 
@@ -121,60 +136,42 @@ async function saveDefaultLangs() {
   await settings.save()
 }
 
-// ── 快捷键 ──
+// ── 快捷键（定义与注册逻辑见 services/hotkeys.ts） ──
 interface HotkeyItem {
   id: string
   label: string
-  command: string  // Tauri command name
+  command: string
   value: string
   status: { type: 'idle' | 'success' | 'error'; message: string }
 }
 
-const hotkeys = ref<HotkeyItem[]>([
-  { id: 'toggle',      label: '唤出/隐藏窗口',  command: 'toggle_window',      value: 'Control+Cmd+Space',  status: { type: 'idle', message: '' } },
-  { id: 'selection',   label: '划词翻译',       command: 'selection_translate', value: 'Control+Cmd+D',      status: { type: 'idle', message: '' } },
-  { id: 'ocr_recognize', label: '截图识别(OCR)', command: 'ocr_recognize',      value: 'Control+Alt+O',  status: { type: 'idle', message: '' } },
-  { id: 'ocr_translate', label: '截图翻译',     command: 'ocr_translate',      value: 'Control+Alt+P',  status: { type: 'idle', message: '' } },
-  { id: 'code_format',   label: '代码格式切换',  command: 'cycle_code_format',  value: 'Control+Alt+U',  status: { type: 'idle', message: '' } },
-  { id: 'clipboard',     label: '剪贴板监听',     command: 'toggle_clipboard',   value: 'Control+Alt+L',  status: { type: 'idle', message: '' } },
-])
+const hotkeys = ref<HotkeyItem[]>(
+  HOTKEY_DEFS.map((d) => ({
+    id: d.id,
+    label: d.label,
+    command: d.command,
+    value: d.defaultValue,
+    status: { type: 'idle' as const, message: '' },
+  }))
+)
 const activeHotkeyIdx = ref(-1)
 
-// 默认快捷键映射
-const DEFAULT_HOTKEYS: Record<string, string> = {
-  toggle: 'Control+Cmd+Space',
-  selection: 'Control+Cmd+D',
-  ocr_recognize: 'Control+Alt+O',
-  ocr_translate: 'Control+Alt+P',
-  code_format: 'Control+Alt+U',
-  clipboard: 'Control+Alt+L',
+function hotkeyBindingsFromUi(): Record<string, string> {
+  const map: Record<string, string> = {}
+  for (const hk of hotkeys.value) {
+    if (hk.value) map[hk.id] = hk.value
+  }
+  return map
 }
 
 async function restoreDefaultHotkeys() {
-  // Reset all values
   for (const hk of hotkeys.value) {
     hk.value = DEFAULT_HOTKEYS[hk.id] || ''
     hk.status = { type: 'idle', message: '' }
-  }
-  // Re-register all silently
-  try { await unregisterAll() } catch { /* ignore */ }
-  let failCount = 0
-  for (const hk of hotkeys.value) {
-    if (!hk.value) continue
-    try {
-      const already = await isRegistered(hk.value)
-      if (already) await unregister(hk.value)
-      await register(hk.value, (event) => {
-        if (event.state === 'Pressed') {
-          import('@tauri-apps/api/core').then(({ invoke }) => invoke(hk.command))
-        }
-      })
-      settings.setConfig('_hotkeys', hk.id, hk.value)
-    } catch {
-      failCount++
-    }
+    settings.setConfig('_hotkeys', hk.id, hk.value)
   }
   await settings.save()
+  const failCount = await registerAllHotkeys(DEFAULT_HOTKEYS)
   if (failCount === 0) {
     Message.success('已恢复默认快捷键')
   } else {
@@ -193,13 +190,17 @@ const keyMap: Record<string, string> = {
 // 聚焦快捷键输入框时，取消注册所有全局快捷键（避免录入时触发动作）
 async function onHotkeyFocus(idx: number) {
   activeHotkeyIdx.value = idx
-  try { await unregisterAll() } catch { /* ignore */ }
+  await unregisterAllHotkeys()
 }
 
-function onHotkeyBlur() {
+async function onHotkeyBlur() {
   activeHotkeyIdx.value = -1
-  // Re-register all shortcuts after focus leaves
-  registerAllHotkeys()
+  // 失焦后保存并重新注册（含未点「注册」的录入）
+  for (const hk of hotkeys.value) {
+    if (hk.value) settings.setConfig('_hotkeys', hk.id, hk.value)
+  }
+  await settings.save()
+  await registerAllHotkeys(hotkeyBindingsFromUi())
 }
 
 function onHotkeyKeyDown(e: KeyboardEvent, idx: number) {
@@ -228,42 +229,32 @@ async function registerHotkey(idx: number) {
   const item = hotkeys.value[idx]
   const key = item.value
   if (!key) { item.status = { type: 'error', message: '请先录入快捷键' }; return }
-  // 互斥检测：检查是否与其他功能重复
   const duplicate = hotkeys.value.find((hk, i) => i !== idx && hk.value === key)
   if (duplicate) {
     item.status = { type: 'error', message: `与「${duplicate.label}」冲突` }
     return
   }
   try {
-    const already = await isRegistered(key)
-    if (already) await unregister(key)
-    await register(key, (event) => {
-      if (event.state === 'Pressed') {
-        import('@tauri-apps/api/core').then(({ invoke }) => invoke(item.command))
-      }
-    })
-    item.status = { type: 'success', message: `✓ 已注册 ${key}` }
-    settings.setConfig('_hotkeys', item.id, key)
+    // 重新注册全部，保证与其它快捷键一致且无残留
+    for (const hk of hotkeys.value) {
+      if (hk.value) settings.setConfig('_hotkeys', hk.id, hk.value)
+    }
     await settings.save()
-  } catch (err: any) {
-    item.status = { type: 'error', message: `注册失败，可能与系统或其他应用冲突，请换一个` }
-  }
-}
-
-/** Re-register all shortcuts that have a value */
-async function registerAllHotkeys() {
-  for (let i = 0; i < hotkeys.value.length; i++) {
-    const item = hotkeys.value[i]
-    if (!item.value) continue
-    try {
-      const already = await isRegistered(item.value)
-      if (already) await unregister(item.value)
-      await register(item.value, (event) => {
-        if (event.state === 'Pressed') {
-          import('@tauri-apps/api/core').then(({ invoke }) => invoke(item.command))
-        }
-      })
-    } catch { /* ignore */ }
+    const failCount = await registerAllHotkeys(hotkeyBindingsFromUi())
+    // 再单独确认当前项（失败时给出明确提示）
+    if (failCount > 0) {
+      try {
+        await registerOneHotkey(item.command, key)
+        item.status = { type: 'success', message: `✓ 已注册 ${key}` }
+      } catch {
+        item.status = { type: 'error', message: '注册失败，可能与系统或其他应用冲突，请换一个' }
+        return
+      }
+    } else {
+      item.status = { type: 'success', message: `✓ 已注册 ${key}` }
+    }
+  } catch {
+    item.status = { type: 'error', message: '注册失败，可能与系统或其他应用冲突，请换一个' }
   }
 }
 
@@ -320,24 +311,13 @@ onMounted(async () => {
     defaultOcrEngine.value = savedOcr['activeEngine']
     activeOcrEngine.value = savedOcr['activeEngine']
   }
-  // 加载开机自启状态
-  try { autoStartEnabled.value = await isAutostartEnabled() } catch { /* ignore */ }
+  try { await initTheme() } catch { /* ignore */ }
+  try {
+    updateBadgeVersion.value = await getAvailableUpdateVersion()
+  } catch { /* ignore */ }
   // 点击外部关闭下拉
   document.addEventListener('click', closeAllDropdowns)
 })
-
-async function toggleAutoStart() {
-  try {
-    if (autoStartEnabled.value) {
-      await disableAutostart()
-    } else {
-      await enableAutostart()
-    }
-    autoStartEnabled.value = await isAutostartEnabled()
-  } catch (e) {
-    console.error('Autostart toggle failed:', e)
-  }
-}
 </script>
 
 <template>
@@ -359,6 +339,11 @@ async function toggleAutoStart() {
         >
           <i class="ph" :class="item.icon"></i>
           <span>{{ item.label }}</span>
+          <span
+            v-if="item.key === 'about' && updateBadgeVersion"
+            class="sidebar-badge"
+            :title="`新版本 v${updateBadgeVersion}`"
+          >新</span>
         </button>
       </nav>
       <div class="sidebar-bottom">
@@ -688,29 +673,10 @@ async function toggleAutoStart() {
         </div>
 
         <!-- ========== 关于页 ========== -->
-        <div v-if="activePage === 'about'" class="page-panel">
-          <div class="config-card">
-            <h3 class="card-title">通用设置</h3>
-            <div class="config-row">
-              <span class="row-label">开机自启</span>
-              <button class="toggle-btn" :class="{ active: autoStartEnabled }" @click="toggleAutoStart">
-                <span class="toggle-knob"></span>
-              </button>
-            </div>
-          </div>
-
-          <div class="config-card about-card">
-            <div class="about-logo">易翻</div>
-            <p class="about-ver">版本 {{ appVersion }}</p>
-            <p class="about-desc">基于 Tauri 2 + Vue 3 的轻量翻译工具。</p>
-            <p class="about-desc">集成 21 种翻译引擎，支持全局快捷键呼出。</p>
-            <div class="about-links">
-              <span class="about-badge">Tauri 2</span>
-              <span class="about-badge">Vue 3</span>
-              <span class="about-badge">Pinia</span>
-            </div>
-          </div>
-        </div>
+        <AboutPanel
+          v-if="activePage === 'about'"
+          @badge-change="(v: string) => (updateBadgeVersion = v)"
+        />
       </div>
     </main>
   </div>
@@ -723,6 +689,7 @@ async function toggleAutoStart() {
   height: 100vh;
   width: 100vw;
   overflow: hidden;
+  background: var(--color-bg-page);
 }
 
 /* ── Sidebar ── */
@@ -736,14 +703,16 @@ async function toggleAutoStart() {
 }
 
 .sidebar-drag {
-  height: 30px;
+  height: 38px;
   flex-shrink: 0;
   -webkit-app-region: drag;
+  /* Overlay titlebar: traffic lights sit over left of sidebar */
+  padding-left: 72px;
 }
 
 .sidebar-logo {
   text-align: center;
-  padding: 8px 16px 20px;
+  padding: 4px 16px 16px;
 }
 
 .logo-text {
@@ -796,13 +765,24 @@ async function toggleAutoStart() {
 }
 
 .sidebar-item.active {
-  background: rgba(79, 110, 247, 0.1);
+  background: var(--color-primary-bg);
   color: var(--color-primary);
   font-weight: 600;
 }
 
 .sidebar-item i {
   font-size: 18px;
+}
+
+.sidebar-badge {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--color-danger);
+  color: #fff;
+  line-height: 1.4;
 }
 
 /* ── Main Area ── */
@@ -818,11 +798,12 @@ async function toggleAutoStart() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 20px;
-  height: 46px;
+  padding: 10px 20px 8px;
+  min-height: 46px;
   flex-shrink: 0;
   border-bottom: 1px solid var(--color-border-light);
   -webkit-app-region: drag;
+  background: var(--color-bg-page);
 }
 
 .page-title {
@@ -936,7 +917,7 @@ async function toggleAutoStart() {
   top: calc(100% + 4px);
   right: 0;
   min-width: 100%;
-  background: #ffffff;
+  background: var(--color-bg);
   border: 1px solid var(--color-border-light);
   border-radius: var(--radius-md);
   box-shadow: 0 4px 20px rgba(0,0,0,0.12);
@@ -992,7 +973,7 @@ async function toggleAutoStart() {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: white;
+  background: var(--color-bg);
   box-shadow: 0 1px 3px rgba(0,0,0,0.15);
   transition: transform 0.2s;
 }
@@ -1271,6 +1252,106 @@ async function toggleAutoStart() {
   color: var(--color-primary);
 }
 
+.about-badge.link {
+  cursor: pointer;
+  border: 1px solid var(--color-primary-border, rgba(79, 110, 247, 0.3));
+}
 
+.update-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.update-status {
+  margin-top: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.update-status.ok { color: var(--color-text-secondary); }
+.update-status.new { color: var(--color-primary); font-weight: 600; }
+.update-status.err { color: #F53F3F; }
+
+.update-notes {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  white-space: pre-wrap;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.update-available {
+  margin-top: 4px;
+}
+
+.update-progress-bar {
+  margin-top: 10px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--color-border-light);
+  overflow: hidden;
+}
+
+.update-progress-fill {
+  height: 100%;
+  background: var(--color-primary);
+  transition: width 0.2s ease;
+  min-width: 2%;
+}
+
+.update-hint {
+  margin-top: 12px;
+  font-size: 11px;
+  color: var(--color-text-placeholder);
+  line-height: 1.5;
+}
+
+.theme-row {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.theme-seg {
+  display: flex;
+  width: 100%;
+  gap: 6px;
+  padding: 4px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-page);
+  border: 1px solid var(--color-border-light);
+}
+
+.theme-seg-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  transition: all var(--transition-fast);
+}
+
+.theme-seg-btn i {
+  font-size: 16px;
+}
+
+.theme-seg-btn:hover {
+  color: var(--color-text);
+  background: var(--color-bg-hover);
+}
+
+.theme-seg-btn.active {
+  color: var(--color-primary);
+  background: var(--color-bg);
+  box-shadow: var(--shadow-sm);
+  font-weight: 600;
+}
 </style>
 

@@ -25,6 +25,7 @@ export interface UpdateCheckResult {
 const STORE_FILE = 'settings.json'
 const KEY_SKIPPED = 'update_skippedVersion'
 const KEY_AUTO_CHECK = 'update_autoCheck'
+const KEY_AVAILABLE = 'update_available_version'
 
 async function getStore() {
   return load(STORE_FILE, { autoSave: true } as any)
@@ -50,6 +51,27 @@ export async function getSkippedVersion(): Promise<string> {
 export async function skipVersion(version: string): Promise<void> {
   const store = await getStore()
   await store.set(KEY_SKIPPED, version)
+  await store.set(KEY_AVAILABLE, '')
+}
+
+/** Version string currently flagged as available (for badge UI), empty if none */
+export async function getAvailableUpdateVersion(): Promise<string> {
+  try {
+    const store = await getStore()
+    return (await store.get<string>(KEY_AVAILABLE)) || ''
+  } catch {
+    return ''
+  }
+}
+
+export async function setAvailableUpdateVersion(version: string): Promise<void> {
+  const store = await getStore()
+  await store.set(KEY_AVAILABLE, version)
+}
+
+export async function clearAvailableUpdateVersion(): Promise<void> {
+  const store = await getStore()
+  await store.set(KEY_AVAILABLE, '')
 }
 
 export async function getAutoCheck(): Promise<boolean> {
@@ -78,6 +100,7 @@ export async function checkForUpdates(): Promise<UpdateCheckResult> {
   try {
     const update = await check()
     if (!update) {
+      try { await clearAvailableUpdateVersion() } catch { /* ignore */ }
       return {
         available: false,
         currentVersion,
@@ -86,6 +109,9 @@ export async function checkForUpdates(): Promise<UpdateCheckResult> {
         update: null,
       }
     }
+    try {
+      await setAvailableUpdateVersion(update.version)
+    } catch { /* ignore */ }
     return {
       available: true,
       currentVersion: update.currentVersion || currentVersion,

@@ -314,7 +314,11 @@ jobs:
           path: artifacts
 
       - name: Generate latest.json
-        run: node scripts/updater.mjs
+        run: |
+          # Changelog from recent commits (release body may not exist yet)
+          NOTES=$(git log -12 --pretty=format:'- %s' 2>/dev/null || echo "易翻 ${{ needs.change-version.outputs.version }}")
+          export RELEASE_NOTES="$NOTES"
+          node scripts/updater.mjs
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.change-version.outputs.version }}

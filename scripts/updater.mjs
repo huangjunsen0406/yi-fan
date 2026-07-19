@@ -68,11 +68,18 @@ const linuxFile =
 const linuxSig = findSig(linuxDir, linuxFile)
 
 const now = new Date().toISOString()
+const verClean = String(version).replace(/^v/, '')
+
+// Prefer CI-provided notes (changelog), fallback to version label
+const notesFromEnv = (process.env.RELEASE_NOTES || '').trim()
+const notes =
+  notesFromEnv ||
+  `易翻 v${verClean}\n\n详见: https://github.com/${GITHUB_REPO}/releases/tag/v${verClean}`
 
 // Tauri compares semver — do NOT prefix with "v"
 const latestJson = {
-  version: String(version).replace(/^v/, ''),
-  notes: `v${String(version).replace(/^v/, '')} release`,
+  version: verClean,
+  notes,
   pub_date: now,
   platforms: {},
 }

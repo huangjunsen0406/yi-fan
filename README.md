@@ -74,15 +74,16 @@ pnpm run tauri build
 yi-fan/
 ├── src/                # 前端源代码 (Vue 3)
 │   ├── components/     # UI 组件
-│   ├── services/       # OCR、翻译、TTS 等核心服务逻辑
+│   ├── services/       # OCR、翻译、TTS、更新、主题等
 │   ├── stores/         # Pinia 状态管理
 │   ├── views/          # 页面视图 (翻译、截图、设置、历史等)
+│   ├── utils/          # 纯函数工具（可单测）
 │   └── main.ts         # 前端入口
 ├── src-tauri/          # Rust 后端源代码 (Tauri)
-│   ├── src/            # Rust 核心逻辑 (剪贴板、截图、托盘、语言检测)
-│   └── tauri.conf.json # Tauri 配置文件
-├── public/             # 静态资源
-└── scripts/            # 自动化脚本
+│   ├── src/            # 剪贴板、截图、托盘、语言检测
+│   └── tauri.conf.json # Tauri 配置（含 updater endpoint）
+├── scripts/            # 发版 / latest.json 生成
+└── .github/workflows/  # CI typecheck + Package 发版
 ```
 
 ## 📄 开源协议

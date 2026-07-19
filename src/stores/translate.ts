@@ -6,6 +6,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { writeText } from '@tauri-apps/plugin-clipboard-manager'
 import { addHistory } from '../services/history'
 import { friendlyError } from '../services/errors'
+import { toNamingFormat } from '../utils/naming'
 
 export interface EngineResult {
   engine: string
@@ -383,37 +384,6 @@ export const useTranslateStore = defineStore('translate', () => {
     }
   }
 
-  // 将英文文本转换为代码命名格式
-  function toNamingFormat(text: string, format: string): string {
-    const words = text
-      .replace(/[^\w\s]/g, '')
-      .trim()
-      .split(/[\s_\-]+/)
-      .filter(Boolean)
-      .map(w => w.toLowerCase())
-
-    if (words.length === 0) return text
-
-    switch (format) {
-      case 'camelCase':
-        return words[0] + words.slice(1).map(w => w[0].toUpperCase() + w.slice(1)).join('')
-      case 'PascalCase':
-        return words.map(w => w[0].toUpperCase() + w.slice(1)).join('')
-      case 'snake_case':
-        return words.join('_')
-      case 'kebab-case':
-        return words.join('-')
-      case 'KEBAB-CASE':
-        return words.map(w => w.toUpperCase()).join('-')
-      case 'CONSTANT_CASE':
-        return words.map(w => w.toUpperCase()).join('_')
-      case 'words':
-        return words.join(' ')
-      default:
-        return words[0] + words.slice(1).map(w => w[0].toUpperCase() + w.slice(1)).join('')
-    }
-  }
-
   async function handleAutoCopy(source: string, target: string) {
     let textToCopy = ''
     switch (autoCopyMode.value) {
@@ -492,6 +462,14 @@ export const useTranslateStore = defineStore('translate', () => {
     const { getCurrentWindow } = await import('@tauri-apps/api/window')
     alwaysOnTop.value = !alwaysOnTop.value
     await getCurrentWindow().setAlwaysOnTop(alwaysOnTop.value)
+    try {
+      const { saveWindowState } = await import('../services/windowState')
+      await saveWindowState({ alwaysOnTop: alwaysOnTop.value })
+    } catch { /* ignore */ }
+  }
+
+  function setAlwaysOnTopState(v: boolean) {
+    alwaysOnTop.value = v
   }
 
   return {
@@ -526,6 +504,7 @@ export const useTranslateStore = defineStore('translate', () => {
     deleteNewlines,
     toggleDynamicTranslate,
     toggleAlwaysOnTop,
+    setAlwaysOnTopState,
     codeFormatLabels,
     cycleCodeFormat,
   }

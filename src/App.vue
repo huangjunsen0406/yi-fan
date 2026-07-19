@@ -12,6 +12,7 @@ import {
   getSkippedVersion,
   checkForUpdates,
 } from './services/update'
+import { initWindowStatePersistence } from './services/windowState'
 
 const router = useRouter()
 const store = useTranslateStore()
@@ -20,6 +21,14 @@ onMounted(async () => {
   const settings = useSettingsStore()
   await settings.init()
   await store.initDefaults()
+
+  // 窗口位置 / 大小 / 置顶记忆
+  try {
+    const ws = await initWindowStatePersistence()
+    if (ws?.alwaysOnTop) store.setAlwaysOnTopState(true)
+  } catch {
+    /* ignore */
+  }
 
   // ── 全局快捷键：仅从 settings 注册（单源） ──
   try {
@@ -40,9 +49,12 @@ onMounted(async () => {
       if (!info.available) return
       const skipped = await getSkippedVersion()
       if (skipped && skipped === info.version) return
+      const { setAvailableUpdateVersion } = await import('./services/update')
+      await setAvailableUpdateVersion(info.version)
       Message.info({
+        id: 'update-available',
         content: `发现新版本 v${info.version}，可在设置 → 关于 中更新`,
-        duration: 5000,
+        duration: 6000,
       })
     } catch {
       /* 网络失败静默忽略 */

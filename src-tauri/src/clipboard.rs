@@ -17,6 +17,11 @@ static PAUSE_COUNT: AtomicU32 = AtomicU32::new(0);
 /// Text to skip on next clipboard poll (set by frontend before auto-copy)
 static SKIP_TEXT: Mutex<String> = Mutex::new(String::new());
 
+/// Adaptive poll interval: faster after a change, slower when idle (saves CPU).
+const INTERVAL_ACTIVE_MS: u64 = 350;
+const INTERVAL_IDLE_MS: u64 = 900;
+const IDLE_AFTER_UNCHANGED: u32 = 8;
+
 /// Start the clipboard polling loop.
 /// Each call increments the generation counter, causing any previous thread to exit.
 #[tauri::command]
@@ -30,6 +35,7 @@ pub fn start_clipboard_monitor(app: tauri::AppHandle) {
     std::thread::spawn(move || {
         // Initialize with current clipboard content to avoid triggering on start
         let mut previous_text = app.clipboard().read_text().unwrap_or_default();
+        let mut unchanged_ticks: u32 = 0;
 
         println!(
             "[clipboard] Initialized with current clipboard ({} chars)",
@@ -51,11 +57,12 @@ pub fn start_clipboard_monitor(app: tauri::AppHandle) {
 
             // Skip polling while paused (selection translate, OCR, etc.)
             if PAUSE_COUNT.load(Ordering::SeqCst) > 0 {
-                std::thread::sleep(std::time::Duration::from_millis(500));
+                std::thread::sleep(std::time::Duration::from_millis(INTERVAL_IDLE_MS));
                 // Update previous_text after resume to avoid stale trigger
                 if let Ok(content) = app.clipboard().read_text() {
                     previous_text = content.trim().to_string();
                 }
+                unchanged_ticks = 0;
                 continue;
             }
 
@@ -75,6 +82,7 @@ pub fn start_clipboard_monitor(app: tauri::AppHandle) {
                         };
 
                         previous_text = text.clone();
+                        unchanged_ticks = 0;
 
                         if !should_skip {
                             println!("[clipboard] New text ({} chars), emitting...", text.len());
@@ -82,6 +90,8 @@ pub fn start_clipboard_monitor(app: tauri::AppHandle) {
                         } else {
                             println!("[clipboard] Skipped auto-copied text");
                         }
+                    } else {
+                        unchanged_ticks = unchanged_ticks.saturating_add(1);
                     }
                 }
                 Err(e) => {
@@ -90,10 +100,16 @@ pub fn start_clipboard_monitor(app: tauri::AppHandle) {
                     if !msg.contains("not available") && !msg.contains("empty") {
                         eprintln!("[clipboard] read_text error: {:?}", e);
                     }
+                    unchanged_ticks = unchanged_ticks.saturating_add(1);
                 }
             }
 
-            std::thread::sleep(std::time::Duration::from_millis(500));
+            let interval = if unchanged_ticks >= IDLE_AFTER_UNCHANGED {
+                INTERVAL_IDLE_MS
+            } else {
+                INTERVAL_ACTIVE_MS
+            };
+            std::thread::sleep(std::time::Duration::from_millis(interval));
         }
     });
 }

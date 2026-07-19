@@ -23,6 +23,8 @@ import {
   skipVersion,
   openReleasesPage,
   openRepoPage,
+  getAvailableUpdateVersion,
+  clearAvailableUpdateVersion,
   type UpdateCheckResult,
 } from '../services/update'
 import {
@@ -47,8 +49,10 @@ const updateAutoCheck = ref(true)
 const updateChecking = ref(false)
 const updateInstalling = ref(false)
 const updateProgress = ref('')
+const updateProgressPct = ref(0)
 const updateInfo = ref<UpdateCheckResult | null>(null)
 const lastUpdateError = ref('')
+const updateBadgeVersion = ref('')
 
 // ── 一级导航 ──
 type PageKey = 'hotkey' | 'translate' | 'ocr' | 'service' | 'about'
@@ -337,6 +341,9 @@ onMounted(async () => {
   // 更新设置
   try { updateAutoCheck.value = await getAutoCheck() } catch { /* ignore */ }
   try { await initTheme() } catch { /* ignore */ }
+  try {
+    updateBadgeVersion.value = await getAvailableUpdateVersion()
+  } catch { /* ignore */ }
   // 点击外部关闭下拉
   document.addEventListener('click', closeAllDropdowns)
 })
@@ -367,8 +374,10 @@ async function handleCheckUpdate() {
     const info = await checkForUpdates()
     updateInfo.value = info
     if (info.available) {
+      updateBadgeVersion.value = info.version
       Message.success(`发现新版本 v${info.version}`)
     } else {
+      updateBadgeVersion.value = ''
       Message.success('当前已是最新版本')
     }
   } catch (e: any) {
@@ -383,32 +392,35 @@ async function handleInstallUpdate() {
   if (!updateInfo.value?.available) return
   updateInstalling.value = true
   updateProgress.value = '正在下载…'
+  updateProgressPct.value = 0
   lastUpdateError.value = ''
-  let downloaded = 0
   try {
-    // Re-check then download (Update handle from first check may be stale after long idle)
-    await checkDownloadInstallAndRestart((chunk, total) => {
-      downloaded += chunk
-      if (total) {
+    await checkDownloadInstallAndRestart((downloaded, total) => {
+      if (total && total > 0) {
         const pct = Math.min(100, Math.round((downloaded / total) * 100))
+        updateProgressPct.value = pct
         updateProgress.value = `下载中 ${pct}%`
       } else {
+        updateProgressPct.value = Math.min(95, updateProgressPct.value + 2)
         updateProgress.value = `已下载 ${(downloaded / 1024 / 1024).toFixed(1)} MB`
       }
     })
-    // relaunch() should exit process; if we return, install finished without relaunch
+    updateProgressPct.value = 100
     updateProgress.value = '安装完成，请手动重启'
   } catch (e: any) {
     lastUpdateError.value = e.message || '安装失败'
     Message.error(lastUpdateError.value)
     updateInstalling.value = false
     updateProgress.value = ''
+    updateProgressPct.value = 0
   }
 }
 
 async function handleSkipVersion() {
   if (!updateInfo.value?.version) return
   await skipVersion(updateInfo.value.version)
+  updateBadgeVersion.value = ''
+  await clearAvailableUpdateVersion()
   Message.info(`已忽略 v${updateInfo.value.version}`)
   updateInfo.value = { ...updateInfo.value, available: false }
 }
@@ -449,6 +461,11 @@ async function handleOpenRepo() {
         >
           <i class="ph" :class="item.icon"></i>
           <span>{{ item.label }}</span>
+          <span
+            v-if="item.key === 'about' && updateBadgeVersion"
+            class="sidebar-badge"
+            :title="`新版本 v${updateBadgeVersion}`"
+          >新</span>
         </button>
       </nav>
       <div class="sidebar-bottom">
@@ -832,6 +849,9 @@ async function handleOpenRepo() {
             <div v-if="updateInfo?.available" class="update-available">
               <p class="update-status new">发现新版本 v{{ updateInfo.version }}</p>
               <p v-if="updateInfo.notes" class="update-notes">{{ updateInfo.notes }}</p>
+              <div v-if="updateInstalling && updateProgress" class="update-progress-bar">
+                <div class="update-progress-fill" :style="{ width: updateProgressPct + '%' }"></div>
+              </div>
               <div class="update-actions">
                 <button
                   class="action-btn primary"
@@ -954,6 +974,17 @@ async function handleOpenRepo() {
 
 .sidebar-item i {
   font-size: 18px;
+}
+
+.sidebar-badge {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--color-danger);
+  color: #fff;
+  line-height: 1.4;
 }
 
 /* ── Main Area ── */
@@ -1455,6 +1486,21 @@ async function handleOpenRepo() {
 
 .update-available {
   margin-top: 4px;
+}
+
+.update-progress-bar {
+  margin-top: 10px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--color-border-light);
+  overflow: hidden;
+}
+
+.update-progress-fill {
+  height: 100%;
+  background: var(--color-primary);
+  transition: width 0.2s ease;
+  min-width: 2%;
 }
 
 .update-hint {

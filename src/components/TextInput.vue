@@ -19,6 +19,11 @@ const emit = defineEmits<{
 
 const speaking = computed(() => speakingSource.value === 'input')
 
+/** UTF-16 length is fine for UI; warn near common free-API limits */
+const charCount = computed(() => props.modelValue.length)
+const isLongText = computed(() => charCount.value >= 2000)
+const isVeryLong = computed(() => charCount.value >= 4500)
+
 async function handleSpeak() {
   if (!props.modelValue.trim()) return
   try {
@@ -71,6 +76,14 @@ function handleKeydown(e: KeyboardEvent) {
       </button>
       <span v-if="detectedLang" class="detected-lang">
         检测到: {{ detectedLang }}
+      </span>
+      <span
+        v-if="charCount > 0"
+        class="char-count"
+        :class="{ warn: isLongText, danger: isVeryLong }"
+        :title="isVeryLong ? '文本过长，部分引擎可能失败或截断' : isLongText ? '较长文本，翻译可能较慢' : '字符数'"
+      >
+        {{ charCount }}{{ isVeryLong ? ' · 过长' : isLongText ? ' · 较长' : '' }}
       </span>
       <div class="spacer"></div>
       <button
@@ -136,6 +149,21 @@ function handleKeydown(e: KeyboardEvent) {
 .detected-lang {
   font-size: var(--font-size-xs);
   color: var(--color-text-placeholder);
+}
+
+.char-count {
+  font-size: 11px;
+  color: var(--color-text-placeholder);
+  font-variant-numeric: tabular-nums;
+}
+
+.char-count.warn {
+  color: var(--color-warning);
+}
+
+.char-count.danger {
+  color: var(--color-danger);
+  font-weight: 600;
 }
 
 .spacer {

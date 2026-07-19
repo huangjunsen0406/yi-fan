@@ -9,9 +9,19 @@ export interface HistoryRecord {
   source_lang: string
   target_lang: string
   created_at: string
+  starred?: number
 }
 
-/** Maximum number of history records to keep */
+export interface HistoryQuery {
+  limit?: number
+  offset?: number
+  keyword?: string
+  engine?: string
+  starredOnly?: boolean
+  /** YYYY-MM-DD local date filter (created_at prefix) */
+  date?: string
+}
+
 const MAX_HISTORY_RECORDS = 5000
 
 let db: Database | null = null
@@ -27,41 +37,47 @@ async function getDB(): Promise<Database> {
         engine TEXT NOT NULL,
         source_lang TEXT DEFAULT '',
         target_lang TEXT DEFAULT '',
-        created_at TEXT DEFAULT (datetime('now','localtime'))
+        created_at TEXT DEFAULT (datetime('now','localtime')),
+        starred INTEGER DEFAULT 0
       )
     `)
-    // 清除已有重复记录：同 source_text + engine + 语言对 只保留 id 最大（最新）的
+    // migrate: add starred if missing
+    try {
+      await db.execute('ALTER TABLE history ADD COLUMN starred INTEGER DEFAULT 0')
+    } catch {
+      /* column already exists */
+    }
     await db.execute(`
       DELETE FROM history WHERE id NOT IN (
         SELECT MAX(id) FROM history
         GROUP BY source_text, engine, source_lang, target_lang
       )
     `)
-    // Trim to max limit on startup
     await trimHistory()
   }
   return db
 }
 
-/** Remove oldest records when exceeding MAX_HISTORY_RECORDS */
 async function trimHistory(): Promise<void> {
   if (!db) return
   const count = await getHistoryCount()
   if (count > MAX_HISTORY_RECORDS) {
     const excess = count - MAX_HISTORY_RECORDS
     await db.execute(
-      `DELETE FROM history WHERE id IN (SELECT id FROM history ORDER BY id ASC LIMIT $1)`,
+      `DELETE FROM history WHERE id IN (
+        SELECT id FROM history WHERE COALESCE(starred,0) = 0 ORDER BY id ASC LIMIT $1
+      )`,
       [excess]
     )
   }
 }
 
-/** Insert a new history record (dedup: same source+engine+langs → update) */
-export async function addHistory(record: Omit<HistoryRecord, 'id' | 'created_at'>): Promise<void> {
+export async function addHistory(
+  record: Omit<HistoryRecord, 'id' | 'created_at' | 'starred'>
+): Promise<void> {
   const d = await getDB()
-  // 去重：相同 source_text + engine + 语言对 → 更新 result_text 和时间
-  const existing = await d.select<{ id: number }[]>(
-    'SELECT id FROM history WHERE source_text = $1 AND engine = $2 AND source_lang = $3 AND target_lang = $4 LIMIT 1',
+  const existing = await d.select<{ id: number; starred: number }[]>(
+    'SELECT id, COALESCE(starred,0) as starred FROM history WHERE source_text = $1 AND engine = $2 AND source_lang = $3 AND target_lang = $4 LIMIT 1',
     [record.source_text, record.engine, record.source_lang, record.target_lang]
   )
   if (existing.length > 0) {
@@ -72,50 +88,98 @@ export async function addHistory(record: Omit<HistoryRecord, 'id' | 'created_at'
     return
   }
   await d.execute(
-    'INSERT INTO history (source_text, result_text, engine, source_lang, target_lang) VALUES ($1, $2, $3, $4, $5)',
+    'INSERT INTO history (source_text, result_text, engine, source_lang, target_lang, starred) VALUES ($1, $2, $3, $4, $5, 0)',
     [record.source_text, record.result_text, record.engine, record.source_lang, record.target_lang]
-  )  // Periodically trim to keep DB size bounded
-  await trimHistory()}
+  )
+  await trimHistory()
+}
 
-/** Get total count of history records */
-export async function getHistoryCount(): Promise<number> {
+function buildWhere(q: HistoryQuery): { sql: string; params: unknown[] } {
+  const clauses: string[] = []
+  const params: unknown[] = []
+  let i = 1
+  if (q.keyword?.trim()) {
+    clauses.push(`(source_text LIKE $${i} OR result_text LIKE $${i})`)
+    params.push(`%${q.keyword.trim()}%`)
+    i++
+  }
+  if (q.engine) {
+    clauses.push(`engine = $${i}`)
+    params.push(q.engine)
+    i++
+  }
+  if (q.starredOnly) {
+    clauses.push(`COALESCE(starred,0) = 1`)
+  }
+  if (q.date) {
+    clauses.push(`created_at LIKE $${i}`)
+    params.push(`${q.date}%`)
+    i++
+  }
+  const sql = clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''
+  return { sql, params }
+}
+
+export async function getHistoryCount(q: HistoryQuery = {}): Promise<number> {
   const d = await getDB()
-  const result = await d.select<{ count: number }[]>('SELECT COUNT(*) as count FROM history')
+  const { sql, params } = buildWhere(q)
+  const result = await d.select<{ count: number }[]>(
+    `SELECT COUNT(*) as count FROM history ${sql}`,
+    params
+  )
   return result[0]?.count ?? 0
 }
 
-/** Get history records with pagination, newest first */
-export async function getHistory(limit: number = 20, offset: number = 0): Promise<HistoryRecord[]> {
+export async function getHistory(
+  limit: number = 20,
+  offset: number = 0,
+  q: HistoryQuery = {}
+): Promise<HistoryRecord[]> {
   const d = await getDB()
+  const { sql, params } = buildWhere(q)
+  const p = [...params, limit, offset]
+  const lim = params.length + 1
+  const off = params.length + 2
   return await d.select<HistoryRecord[]>(
-    'SELECT * FROM history ORDER BY id DESC LIMIT $1 OFFSET $2',
-    [limit, offset]
+    `SELECT * FROM history ${sql} ORDER BY COALESCE(starred,0) DESC, id DESC LIMIT $${lim} OFFSET $${off}`,
+    p
   )
 }
 
-/** Search history by text (fuzzy match) */
 export async function searchHistory(keyword: string): Promise<HistoryRecord[]> {
-  const d = await getDB()
-  const like = `%${keyword}%`
-  return await d.select<HistoryRecord[]>(
-    'SELECT * FROM history WHERE source_text LIKE $1 OR result_text LIKE $1 ORDER BY id DESC LIMIT 200',
-    [like]
-  )
+  return getHistory(200, 0, { keyword })
 }
 
-/** Delete a single history record */
+export async function getHistoryEngines(): Promise<string[]> {
+  const d = await getDB()
+  const rows = await d.select<{ engine: string }[]>(
+    'SELECT DISTINCT engine FROM history ORDER BY engine'
+  )
+  return rows.map((r) => r.engine)
+}
+
+export async function toggleStarHistory(id: number): Promise<boolean> {
+  const d = await getDB()
+  const rows = await d.select<{ starred: number }[]>(
+    'SELECT COALESCE(starred,0) as starred FROM history WHERE id = $1',
+    [id]
+  )
+  if (!rows.length) return false
+  const next = rows[0].starred ? 0 : 1
+  await d.execute('UPDATE history SET starred = $1 WHERE id = $2', [next, id])
+  return next === 1
+}
+
 export async function deleteHistory(id: number): Promise<void> {
   const d = await getDB()
   await d.execute('DELETE FROM history WHERE id = $1', [id])
 }
 
-/** Clear all history */
 export async function clearHistory(): Promise<void> {
   const d = await getDB()
   await d.execute('DELETE FROM history')
 }
 
-/** Export all history as JSON string */
 export async function exportHistory(): Promise<string> {
   const d = await getDB()
   const records = await d.select<HistoryRecord[]>('SELECT * FROM history ORDER BY id DESC')

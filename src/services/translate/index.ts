@@ -61,7 +61,12 @@ export function getProvider(name: string): TranslateProvider | undefined {
   return providers.find(p => p.name === name)
 }
 
-/** Translate using a named provider */
+/**
+ * Translate using a named provider.
+ * When the source has blank-line paragraph breaks, translate each paragraph
+ * separately and rejoin — keeps multi-paragraph layout from being mashed together.
+ * Single newlines inside a paragraph are left to the engine (and UI uses pre-wrap).
+ */
 export async function translate(
   engineName: string,
   text: string,
@@ -71,5 +76,29 @@ export async function translate(
 ): Promise<string> {
   const provider = getProvider(engineName)
   if (!provider) throw new Error(`未知翻译引擎: ${engineName}`)
-  return provider.translate(text, from, to, config)
+
+  // Normalize Windows newlines
+  const normalized = text.replace(/\r\n/g, '\n')
+
+  // Paragraph-aware translate: split on blank lines, keep separators
+  if (/\n[ \t]*\n/.test(normalized)) {
+    const parts = normalized.split(/(\n[ \t]*\n+)/)
+    const results: string[] = []
+    for (const part of parts) {
+      if (!part) continue
+      // Pure separator (blank lines) — keep as-is
+      if (/^\n[ \t]*\n+$/.test(part) || /^[ \t]*\n+$/.test(part)) {
+        results.push(part)
+        continue
+      }
+      if (!part.trim()) {
+        results.push(part)
+        continue
+      }
+      results.push(await provider.translate(part, from, to, config))
+    }
+    return results.join('')
+  }
+
+  return provider.translate(normalized, from, to, config)
 }

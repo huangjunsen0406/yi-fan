@@ -159,11 +159,12 @@ jobs:
             mv "$f" "$NSIS_DIR/$NEW_NAME"
           done
 
-      - name: Upload NSIS installer
+      - name: Upload NSIS installer + updater artifacts
         uses: actions/upload-artifact@v4
         with:
           name: windows_${{ matrix.target }}
-          path: src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*setup*
+          # include setup exe, nsis.zip (+ .sig) for in-app updater
+          path: src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*
           if-no-files-found: warn
 
   build-for-linux:
@@ -312,16 +313,30 @@ jobs:
         with:
           path: artifacts
 
-      - name: Generate update.json
+      - name: Generate latest.json
         run: node scripts/updater.mjs
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.change-version.outputs.version }}
 
-      - name: Upload update.json to release
+      # 挂到当前版本 Release，使 /releases/latest/download/latest.json 可用（与 ccMesh 一致）
+      - name: Upload latest.json to version release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            latest.json
+            update.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 兼容旧 endpoint（可选）
+      - name: Upload latest.json to updater tag
         uses: softprops/action-gh-release@v2
         with:
           tag_name: updater
-          files: update.json
+          files: |
+            latest.json
+            update.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

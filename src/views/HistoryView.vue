@@ -438,6 +438,7 @@ function goBack() {
   color: var(--color-text-secondary);
   line-height: 1.5;
   word-break: break-word;
+  white-space: pre-wrap;
 }
 
 .card-arrow {
@@ -454,6 +455,7 @@ function goBack() {
   font-weight: 500;
   line-height: 1.5;
   word-break: break-word;
+  white-space: pre-wrap;
 }
 
 .card-actions {

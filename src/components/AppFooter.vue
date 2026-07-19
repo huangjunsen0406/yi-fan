@@ -17,19 +17,17 @@ let unlistenToggled: UnlistenFn | null = null
 onMounted(async () => {
   await settings.init()
   const saved = settings.getConfig('_clipboard')['enabled']
-  // 默认开启剪贴板监听（首次启动无配置时也开启）
-  if (saved !== 'false') {
+  // 仅当用户明确开启时才监听（默认关闭，减少打扰）
+  if (saved === 'true') {
     clipboardActive.value = true
     try { await invoke('start_clipboard_monitor') } catch { /* ignore */ }
   }
   unlisten = await listen<boolean>('clipboard-monitor-state', (event) => {
     clipboardActive.value = event.payload
   })
-  // 快捷键切换剪贴板监听时同步 UI
-  unlistenToggled = await listen<boolean>('clipboard-monitor-toggled', async (event) => {
+  // 快捷键切换时同步 UI（持久化由 App.vue 统一处理）
+  unlistenToggled = await listen<boolean>('clipboard-monitor-toggled', (event) => {
     clipboardActive.value = event.payload
-    settings.setConfig('_clipboard', 'enabled', String(event.payload))
-    await settings.save()
   })
 })
 

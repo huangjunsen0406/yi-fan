@@ -170,6 +170,14 @@ fn ocr_translate(app: tauri::AppHandle) {
     });
 }
 
+/// Notify frontend to cycle code naming format (triggered by global shortcut).
+#[tauri::command]
+fn cycle_code_format(app: tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.emit("cycle-code-format", ());
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -179,6 +187,8 @@ pub fn run() {
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             // System tray
             tray::create_tray(app)?;
@@ -186,94 +196,13 @@ pub fn run() {
             // Clean up old temp screenshot files on startup
             screenshot::cleanup_old_temp_files();
 
+            // Global shortcuts are registered from the frontend (settings-driven single source of truth).
+            // Only initialize the plugin here so JS can register/unregister at runtime.
             #[cfg(desktop)]
             {
-                use tauri_plugin_global_shortcut::{
-                    Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState,
-                };
-
-                let shortcut_toggle =
-                    Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SUPER), Code::Space);
-                let shortcut_selection =
-                    Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SUPER), Code::KeyD);
-                let shortcut_ocr_recognize =
-                    Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyO);
-                let shortcut_ocr_translate =
-                    Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyP);
-                let shortcut_code_format =
-                    Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyU);
-                let shortcut_clipboard =
-                    Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyL);
-
-                let s_toggle = shortcut_toggle;
-                let s_selection = shortcut_selection;
-                let s_ocr_rec = shortcut_ocr_recognize;
-                let s_ocr_trans = shortcut_ocr_translate;
-                let s_code_fmt = shortcut_code_format;
-                let s_clipboard = shortcut_clipboard;
-
-                use std::sync::atomic::{AtomicU64, Ordering};
-                use std::time::{SystemTime, UNIX_EPOCH};
-                static LAST_TOGGLE: AtomicU64 = AtomicU64::new(0);
-
                 app.handle().plugin(
-                    tauri_plugin_global_shortcut::Builder::new()
-                        .with_handler(move |app, shortcut, event| {
-                            if event.state() == ShortcutState::Pressed {
-                                if shortcut == &s_toggle {
-                                    // Debounce: ignore if < 500ms since last toggle
-                                    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64;
-                                    let last = LAST_TOGGLE.load(Ordering::Relaxed);
-                                    if now - last < 500 { return; }
-                                    LAST_TOGGLE.store(now, Ordering::Relaxed);
-
-                                    if let Some(window) = app.get_webview_window("main") {
-                                        if window.is_visible().unwrap_or(false) {
-                                            let _ = window.hide();
-                                        } else {
-                                            let _ = window.unminimize();
-                                            let _ = window.show();
-                                            let _ = window.set_focus();
-                                        }
-                                    }
-                                } else if shortcut == &s_selection {
-                                    // All blocking work in a thread
-                                    let app = app.clone();
-                                    std::thread::spawn(move || {
-                                        do_selection_translate(app);
-                                    });
-                                } else if shortcut == &s_ocr_rec {
-                                    let app = app.clone();
-                                    std::thread::spawn(move || {
-                                        do_ocr_recognize(app);
-                                    });
-                                } else if shortcut == &s_ocr_trans {
-                                    let app = app.clone();
-                                    std::thread::spawn(move || {
-                                        do_ocr_translate(app);
-                                    });
-                                } else if shortcut == &s_code_fmt {
-                                    // Emit event to frontend to cycle code format
-                                    if let Some(window) = app.get_webview_window("main") {
-                                        let _ = window.emit("cycle-code-format", ());
-                                    }
-                                } else if shortcut == &s_clipboard {
-                                    clipboard::toggle_clipboard_monitor(app.clone());
-                                }
-                            }
-                        })
-                        .build(),
+                    tauri_plugin_global_shortcut::Builder::new().build(),
                 )?;
-
-                let gs = app.global_shortcut();
-                gs.register(shortcut_toggle)?;
-                gs.register(shortcut_selection)?;
-                gs.register(shortcut_ocr_recognize)?;
-                gs.register(shortcut_ocr_translate)?;
-                gs.register(shortcut_code_format)?;
-                gs.register(shortcut_clipboard)?;
-
-                println!("Registered global shortcuts: Ctrl+Cmd+Space, Ctrl+Cmd+D, Ctrl+Alt+O, Ctrl+Alt+P, Ctrl+Alt+U, Ctrl+Alt+L");
             }
             Ok(())
         })
@@ -310,6 +239,7 @@ pub fn run() {
             selection_translate,
             ocr_recognize,
             ocr_translate,
+            cycle_code_format,
             screenshot::screenshot,
             screenshot::cut_image,
             screenshot::get_base64,

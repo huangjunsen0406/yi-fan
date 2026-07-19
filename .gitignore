@@ -27,3 +27,8 @@ dist-ssr
 pot-desktop
 
 bob-plugin-akl-transmart-free-translate
+
+# Tauri updater private key (never commit); keep README + public key
+src-tauri/keys/*
+!src-tauri/keys/README.md
+!src-tauri/keys/*.pub

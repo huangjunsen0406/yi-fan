@@ -234,6 +234,9 @@ async function handleCopy() {
   font-size: var(--font-size-lg);
   line-height: 1.7;
   color: var(--color-text);
+  /* 保留原文换行 / 空行，避免译文被挤成一团 */
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .code-mode .output-text {
@@ -268,6 +271,8 @@ async function handleCopy() {
   line-height: 1.6;
   color: var(--color-text-secondary);
   opacity: 0.7;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .bilingual-divider {
@@ -333,6 +338,8 @@ async function handleCopy() {
   font-size: var(--font-size-sm);
   line-height: 1.6;
   color: var(--color-text);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .mini-loading {

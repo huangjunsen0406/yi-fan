@@ -6,13 +6,37 @@ import { getVersion } from '@tauri-apps/api/app'
 import { useSettingsStore } from '../stores/settings'
 import { providers, getProvider } from '../services/translate'
 import { ocrProviders, getOcrProvider } from '../services/ocr'
-import { register, unregister, unregisterAll, isRegistered } from '@tauri-apps/plugin-global-shortcut'
 import { enable as enableAutostart, disable as disableAutostart, isEnabled as isAutostartEnabled } from '@tauri-apps/plugin-autostart'
 import { Message } from '@arco-design/web-vue'
+import {
+  HOTKEY_DEFS,
+  DEFAULT_HOTKEYS,
+  registerAllHotkeys,
+  registerOneHotkey,
+  unregisterAllHotkeys,
+} from '../services/hotkeys'
+import {
+  checkForUpdates,
+  checkDownloadInstallAndRestart,
+  getAutoCheck,
+  setAutoCheck,
+  skipVersion,
+  openReleasesPage,
+  openRepoPage,
+  type UpdateCheckResult,
+} from '../services/update'
 
 const router = useRouter()
 const settings = useSettingsStore()
 const appVersion = ref('0.0.0')
+
+// ── 应用更新 ──
+const updateAutoCheck = ref(true)
+const updateChecking = ref(false)
+const updateInstalling = ref(false)
+const updateProgress = ref('')
+const updateInfo = ref<UpdateCheckResult | null>(null)
+const lastUpdateError = ref('')
 
 // ── 一级导航 ──
 type PageKey = 'hotkey' | 'translate' | 'ocr' | 'service' | 'about'
@@ -121,60 +145,42 @@ async function saveDefaultLangs() {
   await settings.save()
 }
 
-// ── 快捷键 ──
+// ── 快捷键（定义与注册逻辑见 services/hotkeys.ts） ──
 interface HotkeyItem {
   id: string
   label: string
-  command: string  // Tauri command name
+  command: string
   value: string
   status: { type: 'idle' | 'success' | 'error'; message: string }
 }
 
-const hotkeys = ref<HotkeyItem[]>([
-  { id: 'toggle',      label: '唤出/隐藏窗口',  command: 'toggle_window',      value: 'Control+Cmd+Space',  status: { type: 'idle', message: '' } },
-  { id: 'selection',   label: '划词翻译',       command: 'selection_translate', value: 'Control+Cmd+D',      status: { type: 'idle', message: '' } },
-  { id: 'ocr_recognize', label: '截图识别(OCR)', command: 'ocr_recognize',      value: 'Control+Alt+O',  status: { type: 'idle', message: '' } },
-  { id: 'ocr_translate', label: '截图翻译',     command: 'ocr_translate',      value: 'Control+Alt+P',  status: { type: 'idle', message: '' } },
-  { id: 'code_format',   label: '代码格式切换',  command: 'cycle_code_format',  value: 'Control+Alt+U',  status: { type: 'idle', message: '' } },
-  { id: 'clipboard',     label: '剪贴板监听',     command: 'toggle_clipboard',   value: 'Control+Alt+L',  status: { type: 'idle', message: '' } },
-])
+const hotkeys = ref<HotkeyItem[]>(
+  HOTKEY_DEFS.map((d) => ({
+    id: d.id,
+    label: d.label,
+    command: d.command,
+    value: d.defaultValue,
+    status: { type: 'idle' as const, message: '' },
+  }))
+)
 const activeHotkeyIdx = ref(-1)
 
-// 默认快捷键映射
-const DEFAULT_HOTKEYS: Record<string, string> = {
-  toggle: 'Control+Cmd+Space',
-  selection: 'Control+Cmd+D',
-  ocr_recognize: 'Control+Alt+O',
-  ocr_translate: 'Control+Alt+P',
-  code_format: 'Control+Alt+U',
-  clipboard: 'Control+Alt+L',
+function hotkeyBindingsFromUi(): Record<string, string> {
+  const map: Record<string, string> = {}
+  for (const hk of hotkeys.value) {
+    if (hk.value) map[hk.id] = hk.value
+  }
+  return map
 }
 
 async function restoreDefaultHotkeys() {
-  // Reset all values
   for (const hk of hotkeys.value) {
     hk.value = DEFAULT_HOTKEYS[hk.id] || ''
     hk.status = { type: 'idle', message: '' }
-  }
-  // Re-register all silently
-  try { await unregisterAll() } catch { /* ignore */ }
-  let failCount = 0
-  for (const hk of hotkeys.value) {
-    if (!hk.value) continue
-    try {
-      const already = await isRegistered(hk.value)
-      if (already) await unregister(hk.value)
-      await register(hk.value, (event) => {
-        if (event.state === 'Pressed') {
-          import('@tauri-apps/api/core').then(({ invoke }) => invoke(hk.command))
-        }
-      })
-      settings.setConfig('_hotkeys', hk.id, hk.value)
-    } catch {
-      failCount++
-    }
+    settings.setConfig('_hotkeys', hk.id, hk.value)
   }
   await settings.save()
+  const failCount = await registerAllHotkeys(DEFAULT_HOTKEYS)
   if (failCount === 0) {
     Message.success('已恢复默认快捷键')
   } else {
@@ -193,13 +199,17 @@ const keyMap: Record<string, string> = {
 // 聚焦快捷键输入框时，取消注册所有全局快捷键（避免录入时触发动作）
 async function onHotkeyFocus(idx: number) {
   activeHotkeyIdx.value = idx
-  try { await unregisterAll() } catch { /* ignore */ }
+  await unregisterAllHotkeys()
 }
 
-function onHotkeyBlur() {
+async function onHotkeyBlur() {
   activeHotkeyIdx.value = -1
-  // Re-register all shortcuts after focus leaves
-  registerAllHotkeys()
+  // 失焦后保存并重新注册（含未点「注册」的录入）
+  for (const hk of hotkeys.value) {
+    if (hk.value) settings.setConfig('_hotkeys', hk.id, hk.value)
+  }
+  await settings.save()
+  await registerAllHotkeys(hotkeyBindingsFromUi())
 }
 
 function onHotkeyKeyDown(e: KeyboardEvent, idx: number) {
@@ -228,42 +238,32 @@ async function registerHotkey(idx: number) {
   const item = hotkeys.value[idx]
   const key = item.value
   if (!key) { item.status = { type: 'error', message: '请先录入快捷键' }; return }
-  // 互斥检测：检查是否与其他功能重复
   const duplicate = hotkeys.value.find((hk, i) => i !== idx && hk.value === key)
   if (duplicate) {
     item.status = { type: 'error', message: `与「${duplicate.label}」冲突` }
     return
   }
   try {
-    const already = await isRegistered(key)
-    if (already) await unregister(key)
-    await register(key, (event) => {
-      if (event.state === 'Pressed') {
-        import('@tauri-apps/api/core').then(({ invoke }) => invoke(item.command))
-      }
-    })
-    item.status = { type: 'success', message: `✓ 已注册 ${key}` }
-    settings.setConfig('_hotkeys', item.id, key)
+    // 重新注册全部，保证与其它快捷键一致且无残留
+    for (const hk of hotkeys.value) {
+      if (hk.value) settings.setConfig('_hotkeys', hk.id, hk.value)
+    }
     await settings.save()
-  } catch (err: any) {
-    item.status = { type: 'error', message: `注册失败，可能与系统或其他应用冲突，请换一个` }
-  }
-}
-
-/** Re-register all shortcuts that have a value */
-async function registerAllHotkeys() {
-  for (let i = 0; i < hotkeys.value.length; i++) {
-    const item = hotkeys.value[i]
-    if (!item.value) continue
-    try {
-      const already = await isRegistered(item.value)
-      if (already) await unregister(item.value)
-      await register(item.value, (event) => {
-        if (event.state === 'Pressed') {
-          import('@tauri-apps/api/core').then(({ invoke }) => invoke(item.command))
-        }
-      })
-    } catch { /* ignore */ }
+    const failCount = await registerAllHotkeys(hotkeyBindingsFromUi())
+    // 再单独确认当前项（失败时给出明确提示）
+    if (failCount > 0) {
+      try {
+        await registerOneHotkey(item.command, key)
+        item.status = { type: 'success', message: `✓ 已注册 ${key}` }
+      } catch {
+        item.status = { type: 'error', message: '注册失败，可能与系统或其他应用冲突，请换一个' }
+        return
+      }
+    } else {
+      item.status = { type: 'success', message: `✓ 已注册 ${key}` }
+    }
+  } catch {
+    item.status = { type: 'error', message: '注册失败，可能与系统或其他应用冲突，请换一个' }
   }
 }
 
@@ -322,6 +322,8 @@ onMounted(async () => {
   }
   // 加载开机自启状态
   try { autoStartEnabled.value = await isAutostartEnabled() } catch { /* ignore */ }
+  // 更新设置
+  try { updateAutoCheck.value = await getAutoCheck() } catch { /* ignore */ }
   // 点击外部关闭下拉
   document.addEventListener('click', closeAllDropdowns)
 })
@@ -336,6 +338,81 @@ async function toggleAutoStart() {
     autoStartEnabled.value = await isAutostartEnabled()
   } catch (e) {
     console.error('Autostart toggle failed:', e)
+  }
+}
+
+async function toggleUpdateAutoCheck() {
+  updateAutoCheck.value = !updateAutoCheck.value
+  await setAutoCheck(updateAutoCheck.value)
+}
+
+async function handleCheckUpdate() {
+  updateChecking.value = true
+  lastUpdateError.value = ''
+  updateInfo.value = null
+  try {
+    const info = await checkForUpdates()
+    updateInfo.value = info
+    if (info.available) {
+      Message.success(`发现新版本 v${info.version}`)
+    } else {
+      Message.success('当前已是最新版本')
+    }
+  } catch (e: any) {
+    lastUpdateError.value = e.message || '检查失败'
+    Message.error(lastUpdateError.value)
+  } finally {
+    updateChecking.value = false
+  }
+}
+
+async function handleInstallUpdate() {
+  if (!updateInfo.value?.available) return
+  updateInstalling.value = true
+  updateProgress.value = '正在下载…'
+  lastUpdateError.value = ''
+  let downloaded = 0
+  try {
+    // Re-check then download (Update handle from first check may be stale after long idle)
+    await checkDownloadInstallAndRestart((chunk, total) => {
+      downloaded += chunk
+      if (total) {
+        const pct = Math.min(100, Math.round((downloaded / total) * 100))
+        updateProgress.value = `下载中 ${pct}%`
+      } else {
+        updateProgress.value = `已下载 ${(downloaded / 1024 / 1024).toFixed(1)} MB`
+      }
+    })
+    // relaunch() should exit process; if we return, install finished without relaunch
+    updateProgress.value = '安装完成，请手动重启'
+  } catch (e: any) {
+    lastUpdateError.value = e.message || '安装失败'
+    Message.error(lastUpdateError.value)
+    updateInstalling.value = false
+    updateProgress.value = ''
+  }
+}
+
+async function handleSkipVersion() {
+  if (!updateInfo.value?.version) return
+  await skipVersion(updateInfo.value.version)
+  Message.info(`已忽略 v${updateInfo.value.version}`)
+  updateInfo.value = { ...updateInfo.value, available: false }
+}
+
+async function handleOpenReleases() {
+  try {
+    await openReleasesPage()
+  } catch {
+    Message.error('无法打开浏览器')
+  }
+}
+
+async function handleOpenRepo() {
+  try {
+    await openRepoPage()
+  } catch {
+    Message.error('无法打开浏览器')
   }
 }
 </script>
@@ -699,6 +776,49 @@ async function toggleAutoStart() {
             </div>
           </div>
 
+          <div class="config-card">
+            <h3 class="card-title">应用更新</h3>
+            <div class="config-row">
+              <span class="row-label">启动时检查更新</span>
+              <button class="toggle-btn" :class="{ active: updateAutoCheck }" @click="toggleUpdateAutoCheck">
+                <span class="toggle-knob"></span>
+              </button>
+            </div>
+            <div class="update-actions">
+              <button
+                class="action-btn primary"
+                :disabled="updateChecking || updateInstalling"
+                @click="handleCheckUpdate"
+              >
+                {{ updateChecking ? '检查中…' : '检查更新' }}
+              </button>
+              <button class="action-btn" :disabled="updateInstalling" @click="handleOpenReleases">
+                GitHub 发布页
+              </button>
+            </div>
+            <p v-if="updateInfo && !updateInfo.available && !lastUpdateError" class="update-status ok">
+              当前已是最新版本（v{{ updateInfo.currentVersion || appVersion }}）
+            </p>
+            <div v-if="updateInfo?.available" class="update-available">
+              <p class="update-status new">发现新版本 v{{ updateInfo.version }}</p>
+              <p v-if="updateInfo.notes" class="update-notes">{{ updateInfo.notes }}</p>
+              <div class="update-actions">
+                <button
+                  class="action-btn primary"
+                  :disabled="updateInstalling"
+                  @click="handleInstallUpdate"
+                >
+                  {{ updateInstalling ? (updateProgress || '安装中…') : '下载并安装' }}
+                </button>
+                <button class="action-btn" :disabled="updateInstalling" @click="handleSkipVersion">
+                  忽略此版本
+                </button>
+              </div>
+            </div>
+            <p v-if="lastUpdateError" class="update-status err">{{ lastUpdateError }}</p>
+            <p class="update-hint">通过 GitHub Releases 分发，无需自建服务器。macOS 未公证时首次打开可能需右键「打开」。</p>
+          </div>
+
           <div class="config-card about-card">
             <div class="about-logo">易翻</div>
             <p class="about-ver">版本 {{ appVersion }}</p>
@@ -708,6 +828,7 @@ async function toggleAutoStart() {
               <span class="about-badge">Tauri 2</span>
               <span class="about-badge">Vue 3</span>
               <span class="about-badge">Pinia</span>
+              <button class="about-badge link" type="button" @click="handleOpenRepo">GitHub</button>
             </div>
           </div>
         </div>
@@ -1271,6 +1392,46 @@ async function toggleAutoStart() {
   color: var(--color-primary);
 }
 
+.about-badge.link {
+  cursor: pointer;
+  border: 1px solid var(--color-primary-border, rgba(79, 110, 247, 0.3));
+}
 
+.update-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.update-status {
+  margin-top: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.update-status.ok { color: var(--color-text-secondary); }
+.update-status.new { color: var(--color-primary); font-weight: 600; }
+.update-status.err { color: #F53F3F; }
+
+.update-notes {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  white-space: pre-wrap;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.update-available {
+  margin-top: 4px;
+}
+
+.update-hint {
+  margin-top: 12px;
+  font-size: 11px;
+  color: var(--color-text-placeholder);
+  line-height: 1.5;
+}
 </style>
 

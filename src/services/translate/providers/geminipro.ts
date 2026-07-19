@@ -29,7 +29,7 @@ export const geminipro: TranslateProvider = {
     const url = `${requestPath}:generateContent?key=${config.apiKey}`
 
     const contents = [
-      { role: 'user', parts: [{ text: `Translate the following text from ${fromLang} to ${toLang}. Only return the translated text, nothing else.\n\n${text}` }] },
+      { role: 'user', parts: [{ text: `Translate the following text from ${fromLang} to ${toLang}. Preserve the original line breaks and paragraph structure. Only return the translated text, nothing else.\n\n${text}` }] },
     ]
 
     const res = await fetch(url, {

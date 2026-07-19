@@ -17,9 +17,15 @@
     "sql:default",
     "sql:allow-execute",
     "autostart:default",
+    "updater:default",
+    "process:default",
     {
       "identifier": "http:default",
       "allow": [
+        { "url": "https://github.com/**" },
+        { "url": "https://api.github.com/**" },
+        { "url": "https://objects.githubusercontent.com/**" },
+        { "url": "https://release-assets.githubusercontent.com/**" },
         { "url": "https://translate.googleapis.com/**" },
         { "url": "https://translate.google.com/**" },
         { "url": "https://transmart.qq.com/**" },

@@ -38,7 +38,7 @@ export const openai: TranslateProvider = {
         role: 'system',
         content: 'You are a professional translation engine. Translate the text naturally and fluently. Only return the translated text, nothing else.',
       },
-      { role: 'user', content: `Translate from ${fromLang} to ${toLang}:\n"""${text}"""` },
+      { role: 'user', content: `Translate from ${fromLang} to ${toLang}. Preserve the original line breaks and paragraph structure. Only return the translated text.\n"""${text}"""` },
     ]
 
     const res = await fetch(apiUrl.href, {

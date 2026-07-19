@@ -249,7 +249,7 @@ function clearFilters() {
         title="仅收藏"
         @click="starredOnly = !starredOnly"
       >
-        <i class="ph" :class="starredOnly ? 'ph-star-fill' : 'ph-star'"></i>
+        <i class="ph" :class="starredOnly ? 'ph-fill ph-star' : 'ph-star'"></i>
         收藏
       </button>
       <button v-if="hasActiveFilter" type="button" class="filter-clear" @click="clearFilters">
@@ -298,7 +298,7 @@ function clearFilters() {
             :title="record.starred ? '取消收藏' : '收藏'"
             @click="handleToggleStar(record)"
           >
-            <i class="ph" :class="record.starred ? 'ph-star-fill' : 'ph-star'"></i>
+            <i class="ph" :class="record.starred ? 'ph-fill ph-star' : 'ph-star'"></i>
           </button>
           <button class="card-btn" @click="copyText(record.result_text)" title="复制译文">
             <i class="ph ph-copy"></i>

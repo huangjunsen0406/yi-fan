@@ -2,6 +2,9 @@ import { createApp } from "vue";
 import { createPinia } from "pinia";
 import ArcoVue from "@arco-design/web-vue";
 import "@arco-design/web-vue/dist/arco.css";
+// Bundle Phosphor icons locally (CDN blocked by Tauri CSP in production)
+import "@phosphor-icons/web/regular";
+import "@phosphor-icons/web/fill";
 import App from "./App.vue";
 import router from "./router";
 import "./styles.css";

@@ -140,9 +140,10 @@ function goToUpdate() {
 .app-footer {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding-top: 4px;
+  gap: 6px;
+  padding: 6px 0 2px;
   flex-shrink: 0;
+  min-height: 40px;
 }
 
 .footer-spacer {
@@ -154,12 +155,22 @@ function goToUpdate() {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   border-radius: var(--radius-sm);
-  color: var(--color-text-secondary);
+  /* Explicit high-contrast colors — avoid near-invisible secondary on some builds */
+  color: var(--color-text);
+  opacity: 0.72;
   font-size: 20px;
   transition: all var(--transition-fast);
+  background: transparent;
+  border: none;
+  flex-shrink: 0;
+}
+
+.footer-btn i {
+  color: inherit;
+  line-height: 1;
 }
 
 .footer-dot {
@@ -174,15 +185,14 @@ function goToUpdate() {
 }
 
 .footer-btn:hover {
+  opacity: 1;
   background: var(--color-bg-hover);
   color: var(--color-text);
 }
 
-.clipboard-btn.active {
-  color: var(--color-primary);
-}
-
+.clipboard-btn.active,
 .pin-btn.active {
+  opacity: 1;
   color: var(--color-primary);
 }
 </style>

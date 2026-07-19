@@ -5,19 +5,22 @@ import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { useSettingsStore } from '../stores/settings'
 import { useTranslateStore } from '../stores/translate'
+import { themeMode, setThemeMode, type ThemeMode } from '../services/theme'
+import { getAvailableUpdateVersion } from '../services/update'
 
 const router = useRouter()
 const settings = useSettingsStore()
 const store = useTranslateStore()
 
 const clipboardActive = ref(false)
+const updateBadge = ref('')
 let unlisten: UnlistenFn | null = null
 let unlistenToggled: UnlistenFn | null = null
+let badgeTimer: ReturnType<typeof setInterval> | null = null
 
 onMounted(async () => {
   await settings.init()
   const saved = settings.getConfig('_clipboard')['enabled']
-  // 仅当用户明确开启时才监听（默认关闭，减少打扰）
   if (saved === 'true') {
     clipboardActive.value = true
     try { await invoke('start_clipboard_monitor') } catch { /* ignore */ }
@@ -25,15 +28,24 @@ onMounted(async () => {
   unlisten = await listen<boolean>('clipboard-monitor-state', (event) => {
     clipboardActive.value = event.payload
   })
-  // 快捷键切换时同步 UI（持久化由 App.vue 统一处理）
   unlistenToggled = await listen<boolean>('clipboard-monitor-toggled', (event) => {
     clipboardActive.value = event.payload
   })
+  try {
+    updateBadge.value = await getAvailableUpdateVersion()
+  } catch { /* ignore */ }
+  // Refresh badge periodically (startup check may finish later)
+  badgeTimer = setInterval(async () => {
+    try {
+      updateBadge.value = await getAvailableUpdateVersion()
+    } catch { /* ignore */ }
+  }, 8000)
 })
 
 onUnmounted(() => {
   unlisten?.()
   unlistenToggled?.()
+  if (badgeTimer) clearInterval(badgeTimer)
 })
 
 async function toggleClipboard() {
@@ -52,12 +64,24 @@ async function toggleClipboard() {
   }
 }
 
+async function cycleTheme() {
+  const order: ThemeMode[] = ['light', 'dark', 'system']
+  const idx = order.indexOf(themeMode.value)
+  await setThemeMode(order[(idx + 1) % order.length])
+}
+
 function goToSettings() {
   router.push('/settings')
 }
 
 function goToHistory() {
   router.push('/history')
+}
+
+function goToUpdate() {
+  router.push({ path: '/settings' })
+  // Settings defaults to hotkey; about is selected via query if we add it later
+  sessionStorage.setItem('yi-fan-settings-page', 'about')
 }
 </script>
 
@@ -72,6 +96,16 @@ function goToHistory() {
       <i v-else class="ph ph-code"></i>
     </button>
     <div class="footer-spacer"></div>
+    <button
+      class="footer-btn theme-btn"
+      :title="`主题: ${themeMode === 'light' ? '浅色' : themeMode === 'dark' ? '深色' : '跟随系统'}（点击切换）`"
+      @click="cycleTheme"
+    >
+      <i
+        class="ph"
+        :class="themeMode === 'dark' ? 'ph-moon' : themeMode === 'light' ? 'ph-sun' : 'ph-desktop'"
+      ></i>
+    </button>
     <button
       class="footer-btn pin-btn"
       :class="{ active: store.alwaysOnTop }"
@@ -91,8 +125,13 @@ function goToHistory() {
     <button class="footer-btn" title="翻译历史" @click="goToHistory">
       <i class="ph ph-clock-counter-clockwise"></i>
     </button>
-    <button class="footer-btn settings-btn" title="设置" @click="goToSettings">
+    <button
+      class="footer-btn settings-btn"
+      :title="updateBadge ? `设置 · 有新版本 v${updateBadge}` : '设置'"
+      @click="updateBadge ? goToUpdate() : goToSettings()"
+    >
       <i class="ph ph-gear"></i>
+      <span v-if="updateBadge" class="footer-dot"></span>
     </button>
   </footer>
 </template>
@@ -111,6 +150,7 @@ function goToHistory() {
 }
 
 .footer-btn {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -120,6 +160,17 @@ function goToHistory() {
   color: var(--color-text-secondary);
   font-size: 20px;
   transition: all var(--transition-fast);
+}
+
+.footer-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-danger);
+  box-shadow: 0 0 0 1.5px var(--color-bg);
 }
 
 .footer-btn:hover {

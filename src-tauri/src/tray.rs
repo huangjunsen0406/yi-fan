@@ -15,6 +15,7 @@ pub fn create_tray(app: &tauri::App) -> tauri::Result<()> {
         MenuItem::with_id(app, "selection_translate", "划词翻译", true, None::<&str>)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
     let history_i = MenuItem::with_id(app, "history", "翻译历史", true, None::<&str>)?;
+    let update_i = MenuItem::with_id(app, "check_update", "检查更新", true, None::<&str>)?;
     let sep3 = PredefinedMenuItem::separator(app)?;
     let quit_i = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
 
@@ -29,6 +30,7 @@ pub fn create_tray(app: &tauri::App) -> tauri::Result<()> {
             &ocr_trans_i,
             &sep2,
             &history_i,
+            &update_i,
             &sep3,
             &quit_i,
         ],
@@ -80,6 +82,14 @@ pub fn create_tray(app: &tauri::App) -> tauri::Result<()> {
                         let _ = window.show();
                         let _ = window.set_focus();
                         let _ = app.emit("navigate", "/history");
+                    }
+                }
+                "check_update" => {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                        let _ = app.emit("navigate", "/settings");
+                        let _ = app.emit("open-settings-about", ());
                     }
                 }
                 "quit" => {

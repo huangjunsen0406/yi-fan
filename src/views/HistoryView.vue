@@ -7,7 +7,6 @@ import {
   getHistoryEngines,
   deleteHistory,
   clearHistory,
-  exportHistory,
   toggleStarHistory,
   type HistoryRecord,
   type HistoryQuery,
@@ -26,6 +25,23 @@ const starredOnly = ref(false)
 const engineOptions = ref<string[]>([])
 const loading = ref(true)
 const showClearConfirm = ref(false)
+const selectedIds = ref<Set<number>>(new Set())
+const selectAllPage = computed({
+  get: () =>
+    records.value.length > 0 &&
+    records.value.every((r) => r.id != null && selectedIds.value.has(r.id)),
+  set: (v: boolean) => {
+    if (v) {
+      const next = new Set(selectedIds.value)
+      for (const r of records.value) if (r.id != null) next.add(r.id)
+      selectedIds.value = next
+    } else {
+      const next = new Set(selectedIds.value)
+      for (const r of records.value) if (r.id != null) next.delete(r.id)
+      selectedIds.value = next
+    }
+  },
+})
 
 const pageSize = 10
 const currentPage = ref(1)
@@ -119,7 +135,10 @@ async function handleClearAll() {
 
 async function handleExport() {
   try {
-    const json = await exportHistory()
+    // Export current filter (up to 2000 rows), not only current page
+    const q = buildQuery()
+    const list = await getHistory(2000, 0, q)
+    const json = JSON.stringify(list, null, 2)
     const blob = new Blob([json], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -130,6 +149,23 @@ async function handleExport() {
   } catch (e) {
     console.warn('Export failed:', e)
   }
+}
+
+function toggleSelect(id: number) {
+  const next = new Set(selectedIds.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  selectedIds.value = next
+}
+
+async function handleDeleteSelected() {
+  if (selectedIds.value.size === 0) return
+  const ids = [...selectedIds.value]
+  for (const id of ids) {
+    await deleteHistory(id)
+  }
+  selectedIds.value = new Set()
+  await loadRecords()
 }
 
 function copyText(text: string) {
@@ -182,8 +218,16 @@ function clearFilters() {
         </button>
       </div>
       <div class="toolbar-btns">
+        <button
+          class="toolbar-btn"
+          :disabled="selectedIds.size === 0"
+          title="删除选中"
+          @click="handleDeleteSelected"
+        >
+          <i class="ph ph-trash"></i> 删除选中 ({{ selectedIds.size }})
+        </button>
         <button class="toolbar-btn" @click="handleExport" :disabled="totalCount === 0 && records.length === 0">
-          <i class="ph ph-download-simple"></i> 导出
+          <i class="ph ph-download-simple"></i> 导出筛选
         </button>
         <button class="toolbar-btn danger" @click="showClearConfirm = true" :disabled="totalCount === 0">
           <i class="ph ph-trash"></i> 清空
@@ -226,8 +270,18 @@ function clearFilters() {
         <i class="ph ph-clock-counter-clockwise"></i>
         <span>暂无历史记录</span>
       </div>
+      <label v-if="records.length > 0" class="select-all-row">
+        <input v-model="selectAllPage" type="checkbox" />
+        <span>本页全选</span>
+      </label>
       <div v-for="record in records" :key="record.id" class="history-card" :class="{ starred: record.starred }">
         <div class="card-meta">
+          <input
+            type="checkbox"
+            class="card-check"
+            :checked="record.id != null && selectedIds.has(record.id)"
+            @change="record.id != null && toggleSelect(record.id)"
+          />
           <span class="meta-engine">{{ engineLabel(record.engine) }}</span>
           <span class="meta-langs">{{ record.source_lang }} → {{ record.target_lang }}</span>
           <span class="meta-time">{{ record.created_at }}</span>
@@ -338,6 +392,21 @@ function clearFilters() {
   gap: 8px;
   padding: 0 16px 10px;
   flex-shrink: 0;
+}
+
+.select-all-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin-bottom: 6px;
+  cursor: pointer;
+}
+
+.card-check {
+  margin-right: 4px;
+  cursor: pointer;
 }
 
 .filter-select,

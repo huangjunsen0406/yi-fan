@@ -120,6 +120,14 @@ onMounted(async () => {
     if (path) router.push(path)
   })
 
+  // 托盘「检查更新」→ 打开设置关于页
+  await listen('open-settings-about', () => {
+    try {
+      sessionStorage.setItem('yi-fan-settings-page', 'about')
+    } catch { /* ignore */ }
+    router.push('/settings')
+  })
+
   // 7. 托盘菜单 → 剪贴板监听 toggle
   await listen('tray-clipboard-toggle', async () => {
     try {

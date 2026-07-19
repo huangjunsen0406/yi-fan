@@ -6,7 +6,6 @@ import { getVersion } from '@tauri-apps/api/app'
 import { useSettingsStore } from '../stores/settings'
 import { providers, getProvider } from '../services/translate'
 import { ocrProviders, getOcrProvider } from '../services/ocr'
-import { enable as enableAutostart, disable as disableAutostart, isEnabled as isAutostartEnabled } from '@tauri-apps/plugin-autostart'
 import { Message } from '@arco-design/web-vue'
 import {
   HOTKEY_DEFS,
@@ -15,48 +14,25 @@ import {
   registerOneHotkey,
   unregisterAllHotkeys,
 } from '../services/hotkeys'
-import {
-  checkForUpdates,
-  checkDownloadInstallAndRestart,
-  getAutoCheck,
-  setAutoCheck,
-  skipVersion,
-  openReleasesPage,
-  openRepoPage,
-  getAvailableUpdateVersion,
-  clearAvailableUpdateVersion,
-  type UpdateCheckResult,
-} from '../services/update'
-import {
-  themeMode,
-  setThemeMode,
-  initTheme,
-  THEME_OPTIONS,
-  type ThemeMode,
-} from '../services/theme'
+import { getAvailableUpdateVersion } from '../services/update'
+import { initTheme } from '../services/theme'
+import AboutPanel from './settings/AboutPanel.vue'
 
 const router = useRouter()
 const settings = useSettingsStore()
 const appVersion = ref('0.0.0')
-
-// ── 外观 ──
-async function handleThemeChange(mode: ThemeMode) {
-  await setThemeMode(mode)
-}
-
-// ── 应用更新 ──
-const updateAutoCheck = ref(true)
-const updateChecking = ref(false)
-const updateInstalling = ref(false)
-const updateProgress = ref('')
-const updateProgressPct = ref(0)
-const updateInfo = ref<UpdateCheckResult | null>(null)
-const lastUpdateError = ref('')
 const updateBadgeVersion = ref('')
 
 // ── 一级导航 ──
 type PageKey = 'hotkey' | 'translate' | 'ocr' | 'service' | 'about'
-const activePage = ref<PageKey>('hotkey')
+const activePage = ref<PageKey>(
+  (typeof sessionStorage !== 'undefined' &&
+    (sessionStorage.getItem('yi-fan-settings-page') as PageKey)) ||
+    'hotkey'
+)
+if (typeof sessionStorage !== 'undefined') {
+  sessionStorage.removeItem('yi-fan-settings-page')
+}
 
 const sidebarItems: { key: PageKey; icon: string; label: string }[] = [
   { key: 'hotkey',    icon: 'ph-keyboard',   label: '快捷键' },
@@ -102,7 +78,6 @@ const ocrAutoCopy = ref(false)
 const ocrAutoTranslate = ref(false)
 const ocrHideWindow = ref(false)
 const ocrCloseOnBlur = ref(false)
-const autoStartEnabled = ref(false)
 const showOcrLangDrop = ref(false)
 const showOcrEngineDrop = ref(false)
 
@@ -336,10 +311,6 @@ onMounted(async () => {
     defaultOcrEngine.value = savedOcr['activeEngine']
     activeOcrEngine.value = savedOcr['activeEngine']
   }
-  // 加载开机自启状态
-  try { autoStartEnabled.value = await isAutostartEnabled() } catch { /* ignore */ }
-  // 更新设置
-  try { updateAutoCheck.value = await getAutoCheck() } catch { /* ignore */ }
   try { await initTheme() } catch { /* ignore */ }
   try {
     updateBadgeVersion.value = await getAvailableUpdateVersion()
@@ -347,99 +318,6 @@ onMounted(async () => {
   // 点击外部关闭下拉
   document.addEventListener('click', closeAllDropdowns)
 })
-
-async function toggleAutoStart() {
-  try {
-    if (autoStartEnabled.value) {
-      await disableAutostart()
-    } else {
-      await enableAutostart()
-    }
-    autoStartEnabled.value = await isAutostartEnabled()
-  } catch (e) {
-    console.error('Autostart toggle failed:', e)
-  }
-}
-
-async function toggleUpdateAutoCheck() {
-  updateAutoCheck.value = !updateAutoCheck.value
-  await setAutoCheck(updateAutoCheck.value)
-}
-
-async function handleCheckUpdate() {
-  updateChecking.value = true
-  lastUpdateError.value = ''
-  updateInfo.value = null
-  try {
-    const info = await checkForUpdates()
-    updateInfo.value = info
-    if (info.available) {
-      updateBadgeVersion.value = info.version
-      Message.success(`发现新版本 v${info.version}`)
-    } else {
-      updateBadgeVersion.value = ''
-      Message.success('当前已是最新版本')
-    }
-  } catch (e: any) {
-    lastUpdateError.value = e.message || '检查失败'
-    Message.error(lastUpdateError.value)
-  } finally {
-    updateChecking.value = false
-  }
-}
-
-async function handleInstallUpdate() {
-  if (!updateInfo.value?.available) return
-  updateInstalling.value = true
-  updateProgress.value = '正在下载…'
-  updateProgressPct.value = 0
-  lastUpdateError.value = ''
-  try {
-    await checkDownloadInstallAndRestart((downloaded, total) => {
-      if (total && total > 0) {
-        const pct = Math.min(100, Math.round((downloaded / total) * 100))
-        updateProgressPct.value = pct
-        updateProgress.value = `下载中 ${pct}%`
-      } else {
-        updateProgressPct.value = Math.min(95, updateProgressPct.value + 2)
-        updateProgress.value = `已下载 ${(downloaded / 1024 / 1024).toFixed(1)} MB`
-      }
-    })
-    updateProgressPct.value = 100
-    updateProgress.value = '安装完成，请手动重启'
-  } catch (e: any) {
-    lastUpdateError.value = e.message || '安装失败'
-    Message.error(lastUpdateError.value)
-    updateInstalling.value = false
-    updateProgress.value = ''
-    updateProgressPct.value = 0
-  }
-}
-
-async function handleSkipVersion() {
-  if (!updateInfo.value?.version) return
-  await skipVersion(updateInfo.value.version)
-  updateBadgeVersion.value = ''
-  await clearAvailableUpdateVersion()
-  Message.info(`已忽略 v${updateInfo.value.version}`)
-  updateInfo.value = { ...updateInfo.value, available: false }
-}
-
-async function handleOpenReleases() {
-  try {
-    await openReleasesPage()
-  } catch {
-    Message.error('无法打开浏览器')
-  }
-}
-
-async function handleOpenRepo() {
-  try {
-    await openRepoPage()
-  } catch {
-    Message.error('无法打开浏览器')
-  }
-}
 </script>
 
 <template>
@@ -795,93 +673,10 @@ async function handleOpenRepo() {
         </div>
 
         <!-- ========== 关于页 ========== -->
-        <div v-if="activePage === 'about'" class="page-panel">
-          <div class="config-card">
-            <h3 class="card-title">通用设置</h3>
-            <div class="config-row">
-              <span class="row-label">开机自启</span>
-              <button class="toggle-btn" :class="{ active: autoStartEnabled }" @click="toggleAutoStart">
-                <span class="toggle-knob"></span>
-              </button>
-            </div>
-            <div class="config-row theme-row">
-              <span class="row-label">外观主题</span>
-              <div class="theme-seg">
-                <button
-                  v-for="opt in THEME_OPTIONS"
-                  :key="opt.value"
-                  type="button"
-                  class="theme-seg-btn"
-                  :class="{ active: themeMode === opt.value }"
-                  :title="opt.label"
-                  @click="handleThemeChange(opt.value)"
-                >
-                  <i class="ph" :class="opt.icon"></i>
-                  <span>{{ opt.label }}</span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div class="config-card">
-            <h3 class="card-title">应用更新</h3>
-            <div class="config-row">
-              <span class="row-label">启动时检查更新</span>
-              <button class="toggle-btn" :class="{ active: updateAutoCheck }" @click="toggleUpdateAutoCheck">
-                <span class="toggle-knob"></span>
-              </button>
-            </div>
-            <div class="update-actions">
-              <button
-                class="action-btn primary"
-                :disabled="updateChecking || updateInstalling"
-                @click="handleCheckUpdate"
-              >
-                {{ updateChecking ? '检查中…' : '检查更新' }}
-              </button>
-              <button class="action-btn" :disabled="updateInstalling" @click="handleOpenReleases">
-                GitHub 发布页
-              </button>
-            </div>
-            <p v-if="updateInfo && !updateInfo.available && !lastUpdateError" class="update-status ok">
-              当前已是最新版本（v{{ updateInfo.currentVersion || appVersion }}）
-            </p>
-            <div v-if="updateInfo?.available" class="update-available">
-              <p class="update-status new">发现新版本 v{{ updateInfo.version }}</p>
-              <p v-if="updateInfo.notes" class="update-notes">{{ updateInfo.notes }}</p>
-              <div v-if="updateInstalling && updateProgress" class="update-progress-bar">
-                <div class="update-progress-fill" :style="{ width: updateProgressPct + '%' }"></div>
-              </div>
-              <div class="update-actions">
-                <button
-                  class="action-btn primary"
-                  :disabled="updateInstalling"
-                  @click="handleInstallUpdate"
-                >
-                  {{ updateInstalling ? (updateProgress || '安装中…') : '下载并安装' }}
-                </button>
-                <button class="action-btn" :disabled="updateInstalling" @click="handleSkipVersion">
-                  忽略此版本
-                </button>
-              </div>
-            </div>
-            <p v-if="lastUpdateError" class="update-status err">{{ lastUpdateError }}</p>
-            <p class="update-hint">通过 GitHub Releases 分发，无需自建服务器。macOS 未公证时首次打开可能需右键「打开」。</p>
-          </div>
-
-          <div class="config-card about-card">
-            <div class="about-logo">易翻</div>
-            <p class="about-ver">版本 {{ appVersion }}</p>
-            <p class="about-desc">基于 Tauri 2 + Vue 3 的轻量翻译工具。</p>
-            <p class="about-desc">集成 21 种翻译引擎，支持全局快捷键呼出。</p>
-            <div class="about-links">
-              <span class="about-badge">Tauri 2</span>
-              <span class="about-badge">Vue 3</span>
-              <span class="about-badge">Pinia</span>
-              <button class="about-badge link" type="button" @click="handleOpenRepo">GitHub</button>
-            </div>
-          </div>
-        </div>
+        <AboutPanel
+          v-if="activePage === 'about'"
+          @badge-change="(v: string) => (updateBadgeVersion = v)"
+        />
       </div>
     </main>
   </div>

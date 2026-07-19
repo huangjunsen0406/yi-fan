@@ -149,6 +149,12 @@ export const useTranslateStore = defineStore('translate', () => {
       return
     }
 
+    const { isTextTooLong, TEXT_BLOCK_CHARS } = await import('../utils/textLimit')
+    if (isTextTooLong(inputText.value.length)) {
+      error.value = `文本超过 ${TEXT_BLOCK_CHARS} 字上限，请删减后再翻译`
+      return
+    }
+
     const settings = useSettingsStore()
     const seq = ++translateSeq
 

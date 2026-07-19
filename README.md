@@ -68,6 +68,26 @@ pnpm run tauri build
 
 打包后的文件将存放在 `src-tauri/target/release/bundle` 目录下。
 
+## 📥 安装说明（macOS）
+
+从 [GitHub Releases](https://github.com/huangjunsen0406/yi-fan/releases) 下载 DMG / `.app` 后，若出现：
+
+> “易翻.app”已损坏，无法打开。你应该将它移到废纸篓。
+
+这是系统 **隔离属性（quarantine）** 导致的误报（应用未做 Apple 公证），并不是文件真的损坏。在终端执行：
+
+```bash
+# 若已拖到「应用程序」
+sudo xattr -cr /Applications/易翻.app
+
+# 若还在「下载」目录，按实际路径改，例如：
+# xattr -cr ~/Downloads/易翻.app
+```
+
+然后再次双击打开即可。也可在「系统设置 → 隐私与安全性」里点「仍要打开」。
+
+> 说明：本项目暂无 Apple 开发者账号，无法进行公证（Notarization）。用终端去掉隔离属性是未签名 macOS 开源软件的常见用法。
+
 ## 📁 项目结构
 
 ```text

@@ -26,7 +26,18 @@ export function resolveTheme(mode: ThemeMode): 'light' | 'dark' {
   return mode
 }
 
-/** Apply theme to document + Arco */
+/** Sync native window chrome (titlebar / traffic lights) with app theme */
+async function applyNativeWindowTheme(resolved: 'light' | 'dark') {
+  try {
+    const { getCurrentWindow } = await import('@tauri-apps/api/window')
+    // null = follow system; explicit light/dark matches overlay titlebar on macOS
+    await getCurrentWindow().setTheme(resolved)
+  } catch {
+    /* browser / unsupported */
+  }
+}
+
+/** Apply theme to document + Arco + native window */
 export function applyTheme(mode: ThemeMode = themeMode.value) {
   const resolved = resolveTheme(mode)
   resolvedTheme.value = resolved
@@ -41,6 +52,8 @@ export function applyTheme(mode: ThemeMode = themeMode.value) {
   } else {
     document.body.removeAttribute('arco-theme')
   }
+
+  void applyNativeWindowTheme(resolved)
 }
 
 function bindSystemListener(enabled: boolean) {

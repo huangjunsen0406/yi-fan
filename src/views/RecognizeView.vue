@@ -231,11 +231,12 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 16px;
-  height: 40px;
+  padding: 10px 16px 8px 78px;
+  min-height: 44px;
   flex-shrink: 0;
   border-bottom: 1px solid var(--color-border-light);
   -webkit-app-region: drag;
+  background: var(--color-bg-page);
 }
 
 .header-title {

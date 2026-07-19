@@ -894,6 +894,7 @@ async function handleOpenRepo() {
   height: 100vh;
   width: 100vw;
   overflow: hidden;
+  background: var(--color-bg-page);
 }
 
 /* ── Sidebar ── */
@@ -907,14 +908,16 @@ async function handleOpenRepo() {
 }
 
 .sidebar-drag {
-  height: 30px;
+  height: 38px;
   flex-shrink: 0;
   -webkit-app-region: drag;
+  /* Overlay titlebar: traffic lights sit over left of sidebar */
+  padding-left: 72px;
 }
 
 .sidebar-logo {
   text-align: center;
-  padding: 8px 16px 20px;
+  padding: 4px 16px 16px;
 }
 
 .logo-text {
@@ -1000,11 +1003,12 @@ async function handleOpenRepo() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 20px;
-  height: 46px;
+  padding: 10px 20px 8px;
+  min-height: 46px;
   flex-shrink: 0;
   border-bottom: 1px solid var(--color-border-light);
   -webkit-app-region: drag;
+  background: var(--color-bg-page);
 }
 
 .page-title {

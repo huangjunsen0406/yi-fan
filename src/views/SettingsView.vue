@@ -358,7 +358,7 @@ onMounted(async () => {
     <main class="main-area">
       <!-- 顶栏 -->
       <div class="main-header" data-tauri-drag-region>
-        <h2 class="page-title">{{ sidebarItems.find(i => i.key === activePage)?.label }}</h2>
+        <h2 class="page-title" data-tauri-drag-region>{{ sidebarItems.find(i => i.key === activePage)?.label }}</h2>
       </div>
 
       <div class="main-content">
@@ -706,6 +706,7 @@ onMounted(async () => {
   height: 38px;
   flex-shrink: 0;
   -webkit-app-region: drag;
+  app-region: drag;
   /* Overlay titlebar: traffic lights sit over left of sidebar */
   padding-left: 72px;
 }
@@ -713,6 +714,15 @@ onMounted(async () => {
 .sidebar-logo {
   text-align: center;
   padding: 4px 16px 16px;
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.sidebar-logo .logo-text,
+.sidebar-logo .logo-ver {
+  -webkit-app-region: drag;
+  app-region: drag;
+  pointer-events: none;
 }
 
 .logo-text {
@@ -757,6 +767,8 @@ onMounted(async () => {
   transition: all var(--transition-fast);
   width: 100%;
   text-align: left;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
 
 .sidebar-item:hover {
@@ -803,14 +815,19 @@ onMounted(async () => {
   flex-shrink: 0;
   border-bottom: 1px solid var(--color-border-light);
   -webkit-app-region: drag;
+  app-region: drag;
   background: var(--color-bg-page);
+  cursor: default;
 }
 
 .page-title {
   font-size: 15px;
   font-weight: 600;
   color: var(--color-text);
-  -webkit-app-region: no-drag;
+  /* Must stay draggable — no-drag here blocks entire header grab */
+  -webkit-app-region: drag;
+  app-region: drag;
+  flex: 1;
 }
 
 .save-btn {

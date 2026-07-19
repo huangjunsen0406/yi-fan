@@ -136,7 +136,7 @@ onUnmounted(() => {
   <div class="recognize-view">
     <!-- 顶栏 -->
     <div class="recognize-header" data-tauri-drag-region>
-      <h2 class="header-title">文字识别</h2>
+      <h2 class="header-title" data-tauri-drag-region>文字识别</h2>
       <div class="header-actions">
         <button class="header-btn" @click="goBack">
           <i class="ph ph-x"></i>
@@ -236,6 +236,7 @@ onUnmounted(() => {
   flex-shrink: 0;
   border-bottom: 1px solid var(--color-border-light);
   -webkit-app-region: drag;
+  app-region: drag;
   background: var(--color-bg-page);
 }
 
@@ -243,7 +244,9 @@ onUnmounted(() => {
   font-size: 14px;
   font-weight: 600;
   color: var(--color-text);
-  -webkit-app-region: no-drag;
+  -webkit-app-region: drag;
+  app-region: drag;
+  flex: 1;
 }
 
 .header-btn {

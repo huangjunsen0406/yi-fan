@@ -27,9 +27,11 @@ import AppFooter from '../components/AppFooter.vue'
   height: 38px;
   flex-shrink: 0;
   -webkit-app-region: drag;
+  app-region: drag;
   /* leave space for macOS traffic lights on the left */
   margin-left: 0;
   padding-left: 72px;
+  cursor: default;
 }
 
 .app-main {

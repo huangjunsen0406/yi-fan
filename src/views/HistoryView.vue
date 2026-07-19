@@ -195,7 +195,7 @@ function clearFilters() {
   <div class="history-view">
     <!-- Header -->
     <div class="history-header" data-tauri-drag-region>
-      <h2 class="header-title">翻译历史</h2>
+      <h2 class="header-title" data-tauri-drag-region>翻译历史</h2>
       <div class="header-actions">
         <button class="header-btn" @click="goBack">
           <i class="ph ph-x"></i>
@@ -351,6 +351,7 @@ function clearFilters() {
   flex-shrink: 0;
   border-bottom: 1px solid var(--color-border-light);
   -webkit-app-region: drag;
+  app-region: drag;
   background: var(--color-bg-page);
 }
 
@@ -358,7 +359,9 @@ function clearFilters() {
   font-size: 14px;
   font-weight: 600;
   color: var(--color-text);
-  -webkit-app-region: no-drag;
+  -webkit-app-region: drag;
+  app-region: drag;
+  flex: 1;
 }
 
 .header-btn {

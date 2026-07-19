@@ -163,3 +163,22 @@ body,
 .settings-view {
   transition: background-color var(--transition-normal), color var(--transition-normal);
 }
+
+/* Tauri Overlay titlebar drag helpers */
+[data-tauri-drag-region] {
+  -webkit-app-region: drag;
+  app-region: drag;
+  cursor: default;
+}
+
+button,
+a,
+input,
+textarea,
+select,
+[data-tauri-drag-region] button,
+[data-tauri-drag-region] a,
+[data-tauri-drag-region] input {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}

@@ -5,6 +5,7 @@ import { useSettingsStore } from './settings'
 import { invoke } from '@tauri-apps/api/core'
 import { writeText } from '@tauri-apps/plugin-clipboard-manager'
 import { addHistory } from '../services/history'
+import { friendlyError } from '../services/errors'
 
 export interface EngineResult {
   engine: string
@@ -213,7 +214,7 @@ export const useTranslateStore = defineStore('translate', () => {
       }
     } catch (err: any) {
       if (seq !== translateSeq) return
-      error.value = err.message || '翻译失败'
+      error.value = friendlyError(err, '翻译失败')
       outputText.value = ''
     } finally {
       if (seq === translateSeq) {
@@ -250,7 +251,10 @@ export const useTranslateStore = defineStore('translate', () => {
     error.value = ''
     outputText.value = ''
 
-    const promises = engines.map(async (engineName, idx) => {
+    // Limit concurrency to avoid rate-limits when many engines enabled
+    const CONCURRENCY = 3
+    let cursor = 0
+    const runOne = async (engineName: string, idx: number) => {
       try {
         if (!settings.isConfigured(engineName)) {
           if (requestSeq !== translateSeq) return
@@ -270,11 +274,18 @@ export const useTranslateStore = defineStore('translate', () => {
       } catch (err: any) {
         if (requestSeq !== translateSeq) return
         multiEngineResults.value[idx].loading = false
-        multiEngineResults.value[idx].error = err.message || '翻译失败'
+        multiEngineResults.value[idx].error = friendlyError(err, '翻译失败')
       }
-    })
-
-    await Promise.allSettled(promises)
+    }
+    const worker = async () => {
+      while (cursor < engines.length) {
+        const idx = cursor++
+        await runOne(engines[idx], idx)
+      }
+    }
+    await Promise.all(
+      Array.from({ length: Math.min(CONCURRENCY, engines.length) }, () => worker())
+    )
     if (requestSeq !== translateSeq) return
 
     loading.value = false
@@ -359,7 +370,7 @@ export const useTranslateStore = defineStore('translate', () => {
 
         return { ok: !!result, result: result || undefined }
       } catch (err: any) {
-        const msg = err.message || '翻译失败'
+        const msg = friendlyError(err, '翻译失败')
         if (seq === translateSeq) {
           error.value = msg
           loading.value = false

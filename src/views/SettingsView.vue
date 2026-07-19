@@ -25,10 +25,22 @@ import {
   openRepoPage,
   type UpdateCheckResult,
 } from '../services/update'
+import {
+  themeMode,
+  setThemeMode,
+  initTheme,
+  THEME_OPTIONS,
+  type ThemeMode,
+} from '../services/theme'
 
 const router = useRouter()
 const settings = useSettingsStore()
 const appVersion = ref('0.0.0')
+
+// ── 外观 ──
+async function handleThemeChange(mode: ThemeMode) {
+  await setThemeMode(mode)
+}
 
 // ── 应用更新 ──
 const updateAutoCheck = ref(true)
@@ -324,6 +336,7 @@ onMounted(async () => {
   try { autoStartEnabled.value = await isAutostartEnabled() } catch { /* ignore */ }
   // 更新设置
   try { updateAutoCheck.value = await getAutoCheck() } catch { /* ignore */ }
+  try { await initTheme() } catch { /* ignore */ }
   // 点击外部关闭下拉
   document.addEventListener('click', closeAllDropdowns)
 })
@@ -774,6 +787,23 @@ async function handleOpenRepo() {
                 <span class="toggle-knob"></span>
               </button>
             </div>
+            <div class="config-row theme-row">
+              <span class="row-label">外观主题</span>
+              <div class="theme-seg">
+                <button
+                  v-for="opt in THEME_OPTIONS"
+                  :key="opt.value"
+                  type="button"
+                  class="theme-seg-btn"
+                  :class="{ active: themeMode === opt.value }"
+                  :title="opt.label"
+                  @click="handleThemeChange(opt.value)"
+                >
+                  <i class="ph" :class="opt.icon"></i>
+                  <span>{{ opt.label }}</span>
+                </button>
+              </div>
+            </div>
           </div>
 
           <div class="config-card">
@@ -917,7 +947,7 @@ async function handleOpenRepo() {
 }
 
 .sidebar-item.active {
-  background: rgba(79, 110, 247, 0.1);
+  background: var(--color-primary-bg);
   color: var(--color-primary);
   font-weight: 600;
 }
@@ -1057,7 +1087,7 @@ async function handleOpenRepo() {
   top: calc(100% + 4px);
   right: 0;
   min-width: 100%;
-  background: #ffffff;
+  background: var(--color-bg);
   border: 1px solid var(--color-border-light);
   border-radius: var(--radius-md);
   box-shadow: 0 4px 20px rgba(0,0,0,0.12);
@@ -1113,7 +1143,7 @@ async function handleOpenRepo() {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: white;
+  background: var(--color-bg);
   box-shadow: 0 1px 3px rgba(0,0,0,0.15);
   transition: transform 0.2s;
 }
@@ -1432,6 +1462,51 @@ async function handleOpenRepo() {
   font-size: 11px;
   color: var(--color-text-placeholder);
   line-height: 1.5;
+}
+
+.theme-row {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.theme-seg {
+  display: flex;
+  width: 100%;
+  gap: 6px;
+  padding: 4px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-page);
+  border: 1px solid var(--color-border-light);
+}
+
+.theme-seg-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  transition: all var(--transition-fast);
+}
+
+.theme-seg-btn i {
+  font-size: 16px;
+}
+
+.theme-seg-btn:hover {
+  color: var(--color-text);
+  background: var(--color-bg-hover);
+}
+
+.theme-seg-btn.active {
+  color: var(--color-primary);
+  background: var(--color-bg);
+  box-shadow: var(--shadow-sm);
+  font-weight: 600;
 }
 </style>
 

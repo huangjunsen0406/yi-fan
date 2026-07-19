@@ -252,7 +252,7 @@ async function handleCopy() {
   transform: translateX(-50%);
   font-size: 72px;
   font-weight: 700;
-  color: rgba(0, 0, 0, 0.04);
+  color: var(--code-watermark);
   font-family: 'SF Mono', 'Fira Code', monospace;
   pointer-events: none;
   white-space: nowrap;

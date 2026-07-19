@@ -1,4 +1,4 @@
-/* ========== CSS Variables ========== */
+/* ========== CSS Variables (light) ========== */
 :root {
   --color-primary: #4F6EF7;
   --color-primary-light: #6B83F9;
@@ -8,6 +8,7 @@
   --color-bg: #FFFFFF;
   --color-bg-page: #F7F8FA;
   --color-bg-hover: #F2F3F5;
+  --color-bg-card: #FFFFFF;
 
   --color-text: #1D2129;
   --color-text-secondary: #86909C;
@@ -43,6 +44,48 @@
 
   --transition-fast: 0.15s ease;
   --transition-normal: 0.25s ease;
+
+  --scrollbar-thumb: #D4D6DD;
+  --scrollbar-thumb-hover: #B8BBCC;
+  --code-watermark: rgba(0, 0, 0, 0.04);
+}
+
+/* ========== Dark theme ========== */
+html.dark,
+html[data-theme='dark'] {
+  --color-primary: #6B8AFF;
+  --color-primary-light: #8AA3FF;
+  --color-primary-bg: rgba(107, 138, 255, 0.14);
+  --color-primary-border: rgba(107, 138, 255, 0.35);
+
+  --color-bg: #1A1A1E;
+  --color-bg-page: #141416;
+  --color-bg-hover: #2A2A30;
+  --color-bg-card: #222228;
+
+  --color-text: #E8E8ED;
+  --color-text-secondary: #9B9BA8;
+  --color-text-placeholder: #5C5C6A;
+
+  --color-border: #2E2E36;
+  --color-border-light: #25252C;
+
+  --color-success: #23C343;
+  --color-warning: #FF9A2E;
+  --color-danger: #F76965;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.5);
+
+  --scrollbar-thumb: #3A3A44;
+  --scrollbar-thumb-hover: #50505C;
+  --code-watermark: rgba(255, 255, 255, 0.04);
+  color-scheme: dark;
+}
+
+html[data-theme='light'] {
+  color-scheme: light;
 }
 
 /* ========== Reset ========== */
@@ -106,10 +149,17 @@ textarea::placeholder {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #D4D6DD;
+  background: var(--scrollbar-thumb);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #B8BBCC;
+  background: var(--scrollbar-thumb-hover);
+}
+
+/* Smooth theme transitions for chrome (avoid animating every text node) */
+body,
+.app-layout,
+.settings-view {
+  transition: background-color var(--transition-normal), color var(--transition-normal);
 }

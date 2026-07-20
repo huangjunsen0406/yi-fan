@@ -2,10 +2,25 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { load } from '@tauri-apps/plugin-store'
 import { providers, type TranslateProvider } from '../services/translate'
+import {
+  CONFIG_NS,
+  getAppConfig as schemaGetApp,
+  setAppConfig as schemaSetApp,
+  getUiConfig as schemaGetUi,
+  setUiConfig as schemaSetUi,
+  type AppConfigKey,
+  type UiConfigKey,
+} from '../services/configSchema'
 
 // 默认主页显示的 4 个引擎（免费/无需额外配置即可用的）
 const DEFAULT_ENABLED = ['google', 'bing', 'transmart', 'deepl']
 
+/**
+ * Settings store.
+ * Engine keys: provider name → field map.
+ * Reserved namespaces: `_app` `_ui` `_hotkeys` `_translate` `_ocr` `_clipboard`
+ * (see `services/configSchema.ts`).
+ */
 export const useSettingsStore = defineStore('settings', () => {
   // Dynamic config storage: { engineName: { fieldKey: value } }
   const configs = ref<Record<string, Record<string, string>>>({})
@@ -27,6 +42,10 @@ export const useSettingsStore = defineStore('settings', () => {
         const saved = await storeInstance.get<Record<string, Record<string, string>>>('configs')
         if (saved) {
           configs.value = saved
+          // Ensure reserved namespaces exist as objects
+          for (const ns of Object.values(CONFIG_NS)) {
+            if (!configs.value[ns]) configs.value[ns] = {}
+          }
         }
         const savedEnabled = await storeInstance.get<string[]>('enabledEngines')
         if (savedEnabled && savedEnabled.length > 0) {
@@ -60,6 +79,27 @@ export const useSettingsStore = defineStore('settings', () => {
     configs.value[engineName][key] = value
   }
 
+  const accessor = {
+    getConfig,
+    setConfig,
+  }
+
+  function getApp(key: AppConfigKey): string {
+    return schemaGetApp(accessor, key)
+  }
+
+  function setApp(key: AppConfigKey, value: string) {
+    schemaSetApp(accessor, key, value)
+  }
+
+  function getUi(key: UiConfigKey): string {
+    return schemaGetUi(accessor, key)
+  }
+
+  function setUi(key: UiConfigKey, value: string) {
+    schemaSetUi(accessor, key, value)
+  }
+
   function isConfigured(engineName: string): boolean {
     const provider = providers.find((p: TranslateProvider) => p.name === engineName)
     if (!provider || !provider.needsConfig) return true
@@ -90,6 +130,10 @@ export const useSettingsStore = defineStore('settings', () => {
     save,
     getConfig,
     setConfig,
+    getApp,
+    setApp,
+    getUi,
+    setUi,
     isConfigured,
     isEnabled,
     toggleEngine,

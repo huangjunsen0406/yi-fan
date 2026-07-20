@@ -48,20 +48,34 @@ async function dispatchCommand(command: string) {
   }
 }
 
+export interface HotkeyRegisterFailure {
+  id: string
+  label: string
+  key: string
+  error?: string
+}
+
+export interface HotkeyRegisterResult {
+  failCount: number
+  failed: HotkeyRegisterFailure[]
+  ok: string[]
+}
+
 /**
  * Unregister everything, then register from saved bindings (fallback to defaults).
- * @returns number of failed registrations
+ * Returns detailed failures (OS cannot enumerate who owns a hotkey — only try-register).
  */
-export async function registerAllHotkeys(
+export async function registerAllHotkeysDetailed(
   saved: Record<string, string> = {}
-): Promise<number> {
+): Promise<HotkeyRegisterResult> {
   try {
     await unregisterAll()
   } catch {
     /* ignore */
   }
 
-  let failCount = 0
+  const failed: HotkeyRegisterFailure[] = []
+  const ok: string[] = []
   for (const def of HOTKEY_DEFS) {
     const key = (saved[def.id] || def.defaultValue || '').trim()
     if (!key) continue
@@ -73,12 +87,47 @@ export async function registerAllHotkeys(
           void dispatchCommand(def.command)
         }
       })
+      ok.push(def.id)
     } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e ?? '')
       console.warn(`[hotkeys] failed to register ${def.id} (${key}):`, e)
-      failCount++
+      failed.push({ id: def.id, label: def.label, key, error: msg })
     }
   }
-  return failCount
+  return { failCount: failed.length, failed, ok }
+}
+
+/** @returns number of failed registrations */
+export async function registerAllHotkeys(
+  saved: Record<string, string> = {}
+): Promise<number> {
+  const r = await registerAllHotkeysDetailed(saved)
+  return r.failCount
+}
+
+/** User-facing conflict tips (no OS-level scan — platforms don't expose owners). */
+export function hotkeyConflictHint(key?: string): string {
+  const base =
+    '系统不会告诉我们是谁占用了该组合，只能通过「试注册」判断是否可用。请更换修饰键或主键。'
+  const isMac =
+    typeof navigator !== 'undefined' &&
+    /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '')
+  if (isMac) {
+    return (
+      base +
+      ' macOS 常见占用：截图(⇧⌘3/4/5)、聚焦搜索(⌘Space)、输入法切换。可到「系统设置 → 键盘 → 键盘快捷键」对照。'
+    )
+  }
+  return (
+    base +
+    ' Windows 常见占用：Win+…、部分输入法/截图工具、其它翻译软件。可用第三方 HotKeysList 等工具排查。' +
+    (key ? ` 当前组合：${key}` : '')
+  )
+}
+
+/** Friendly one-line status for a failed key */
+export function formatHotkeyFailure(f: HotkeyRegisterFailure): string {
+  return `「${f.label}」(${f.key}) 注册失败`
 }
 
 /** Register a single shortcut (used after user confirms one key in settings). */

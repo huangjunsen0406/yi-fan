@@ -1,11 +1,47 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { Message } from '@arco-design/web-vue'
 import { useTranslateStore } from '../stores/translate'
+import { useSettingsStore } from '../stores/settings'
 import { speak, speakingSource } from '../services/tts'
+import { translate } from '../services/translate'
 
 const store = useTranslateStore()
+const settings = useSettingsStore()
 const justCopied = ref(false)
 const speaking = computed(() => speakingSource.value === 'output')
+
+async function setDefaultEngine(name: string) {
+  settings.setConfig('_translate', 'defaultEngine', name)
+  await settings.save()
+  store.activeEngine = name
+  Message.success('已设为默认引擎')
+}
+
+async function retryEngine(idx: number) {
+  const item = store.multiEngineResults[idx]
+  if (!item) return
+  item.loading = true
+  item.error = ''
+  item.text = ''
+  try {
+    await settings.init()
+    const config = settings.getConfig(item.engine)
+    const result = await translate(
+      item.engine,
+      store.inputText,
+      store.sourceLang,
+      store.targetLang,
+      config
+    )
+    item.text = result
+    if (!store.outputText) store.outputText = result
+  } catch (e: any) {
+    item.error = e?.message || '重试失败'
+  } finally {
+    item.loading = false
+  }
+}
 
 const autoCopyLabel = computed(() => {
   switch (store.autoCopyMode) {
@@ -76,7 +112,7 @@ async function handleCopy() {
     <!-- Multi-engine results -->
     <div v-else-if="store.multiEngineMode && store.multiEngineResults.length > 0" class="output-content multi-results">
       <div
-        v-for="result in store.multiEngineResults"
+        v-for="(result, idx) in store.multiEngineResults"
         :key="result.engine"
         class="engine-result"
         :class="{ 'has-error': result.error }"
@@ -85,6 +121,36 @@ async function handleCopy() {
           <span class="engine-label">{{ result.label }}</span>
           <div v-if="result.loading" class="mini-loading"></div>
           <span v-if="result.error" class="engine-error">{{ result.error }}</span>
+          <div class="engine-actions">
+            <button
+              v-if="result.text"
+              class="mini-btn"
+              title="复制"
+              :aria-label="`复制 ${result.label} 译文`"
+              @click="store.copyToClipboard(result.text)"
+            >复制</button>
+            <button
+              v-if="result.text"
+              class="mini-btn"
+              title="采用为当前译文"
+              :aria-label="`采用 ${result.label} 译文`"
+              @click="store.outputText = result.text; store.activeEngine = result.engine"
+            >采用</button>
+            <button
+              v-if="result.text"
+              class="mini-btn"
+              title="设为默认引擎"
+              :aria-label="`将 ${result.label} 设为默认引擎`"
+              @click="setDefaultEngine(result.engine)"
+            >默认</button>
+            <button
+              v-if="result.error && !result.loading"
+              class="mini-btn"
+              title="重试"
+              :aria-label="`重试 ${result.label}`"
+              @click="retryEngine(idx)"
+            >重试</button>
+          </div>
         </div>
         <p v-if="result.text" class="engine-result-text">{{ result.text }}</p>
       </div>
@@ -327,6 +393,27 @@ async function handleCopy() {
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--color-primary);
+}
+
+.engine-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+}
+
+.mini-btn {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-secondary);
+  background: var(--color-bg);
+  cursor: pointer;
+}
+
+.mini-btn:hover {
+  color: var(--color-primary);
+  border-color: var(--color-primary-border);
 }
 
 .engine-error {

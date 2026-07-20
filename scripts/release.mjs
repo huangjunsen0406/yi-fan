@@ -227,7 +227,38 @@ async function main() {
     run('cargo check 2>/dev/null || true', { cwd: resolve(ROOT, 'src-tauri') })
   }
 
-  // ── 6. Git commit + tag + push ──
+  // ── 6. Generate bilingual release notes ──
+  console.log(`\n${pc.bold('📋 生成 Release Notes')}`)
+  const notesPath = resolve(ROOT, 'RELEASE_NOTES.md')
+  try {
+    const prev = (() => {
+      try {
+        return run('git describe --tags --abbrev=0 2>/dev/null')
+      } catch {
+        return ''
+      }
+    })()
+    const fromArg = prev && prev !== tag ? `--from ${prev}` : ''
+    if (DRY_RUN) {
+      step(pc.gray('·'), `[dry-run] generate-release-notes ${fromArg} --to ${tag}`)
+    } else {
+      run(
+        `node scripts/generate-release-notes.mjs ${fromArg} --to ${tag} --out RELEASE_NOTES.md`
+      )
+      step(pc.green('✔'), `RELEASE_NOTES.md（中英）`)
+      console.log(pc.gray('  ── preview ──'))
+      try {
+        const preview = readFileSync(notesPath, 'utf-8').split('\n').slice(0, 24).join('\n')
+        console.log(pc.gray(preview))
+      } catch {
+        /* ignore */
+      }
+    }
+  } catch (e) {
+    step(pc.yellow('⚠'), `Release notes 生成失败: ${e.message}`)
+  }
+
+  // ── 7. Git commit + tag + push ──
   console.log(`\n${pc.bold('🏷️  Git 操作')}`)
 
   const hasChanges = !isWorkingTreeClean()
@@ -239,7 +270,17 @@ async function main() {
     step(pc.gray('–'), '无文件变更，跳过 commit')
   }
 
-  run(`git tag ${tag}`)
+  // annotated tag with release notes body when available
+  try {
+    const notes = readFileSync(notesPath, 'utf-8')
+    if (!DRY_RUN && notes.trim()) {
+      run(`git tag -a ${tag} -F RELEASE_NOTES.md`)
+    } else {
+      run(`git tag ${tag}`)
+    }
+  } catch {
+    run(`git tag ${tag}`)
+  }
   step(pc.green('✔'), `git tag ${tag}`)
 
   run(`git push origin ${branch}`)
@@ -248,9 +289,10 @@ async function main() {
   run(`git push origin ${tag}`)
   step(pc.green('✔'), `git push origin ${tag}`)
 
-  // ── 7. Done ──
+  // ── 8. Done ──
   console.log(`\n${pc.bold(pc.green(`🎉 ${tag} 发布成功！`))}`)
   console.log(pc.gray(`   GitHub Release → https://github.com/huangjunsen0406/yi-fan/releases/tag/${tag}`))
+  console.log(pc.gray(`   Release notes  → RELEASE_NOTES.md（可粘贴到 GitHub Release 正文）`))
   console.log()
 }
 

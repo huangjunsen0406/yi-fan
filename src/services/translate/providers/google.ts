@@ -1,5 +1,6 @@
 import { fetchWithTimeout as fetch } from '../utils/fetchWithTimeout'
 import type { TranslateProvider } from '../types'
+import { splitChunks } from '../../../utils/textChunk'
 
 const langMap: Record<string, string> = {
   '自动检测': 'auto', '简体中文': 'zh-CN', '繁体中文': 'zh-TW', '英语': 'en',
@@ -40,23 +41,6 @@ async function translateChunk(text: string, sl: string, tl: string): Promise<str
     if (item[0]) result += item[0]
   }
   return result
-}
-
-/** Split text into chunks preferring paragraph/newline boundaries */
-function splitChunks(text: string, maxLen: number): string[] {
-  if (text.length <= maxLen) return [text]
-  const chunks: string[] = []
-  let rest = text
-  while (rest.length > maxLen) {
-    let cut = rest.lastIndexOf('\n\n', maxLen)
-    if (cut < maxLen * 0.4) cut = rest.lastIndexOf('\n', maxLen)
-    if (cut < maxLen * 0.4) cut = rest.lastIndexOf(' ', maxLen)
-    if (cut < maxLen * 0.4) cut = maxLen
-    chunks.push(rest.slice(0, cut))
-    rest = rest.slice(cut).replace(/^\n+/, '')
-  }
-  if (rest) chunks.push(rest)
-  return chunks
 }
 
 export const google: TranslateProvider = {

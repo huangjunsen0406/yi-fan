@@ -1,5 +1,6 @@
 // ── Translation History Service (SQLite) ──
 import Database from '@tauri-apps/plugin-sql'
+import { buildWhere } from '../utils/historyQuery'
 
 export interface HistoryRecord {
   id?: number
@@ -21,6 +22,8 @@ export interface HistoryQuery {
   /** YYYY-MM-DD local date filter (created_at prefix) */
   date?: string
 }
+
+export { buildWhere }
 
 const MAX_HISTORY_RECORDS = 5000
 
@@ -92,32 +95,6 @@ export async function addHistory(
     [record.source_text, record.result_text, record.engine, record.source_lang, record.target_lang]
   )
   await trimHistory()
-}
-
-function buildWhere(q: HistoryQuery): { sql: string; params: unknown[] } {
-  const clauses: string[] = []
-  const params: unknown[] = []
-  let i = 1
-  if (q.keyword?.trim()) {
-    clauses.push(`(source_text LIKE $${i} OR result_text LIKE $${i})`)
-    params.push(`%${q.keyword.trim()}%`)
-    i++
-  }
-  if (q.engine) {
-    clauses.push(`engine = $${i}`)
-    params.push(q.engine)
-    i++
-  }
-  if (q.starredOnly) {
-    clauses.push(`COALESCE(starred,0) = 1`)
-  }
-  if (q.date) {
-    clauses.push(`created_at LIKE $${i}`)
-    params.push(`${q.date}%`)
-    i++
-  }
-  const sql = clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''
-  return { sql, params }
 }
 
 export async function getHistoryCount(q: HistoryQuery = {}): Promise<number> {

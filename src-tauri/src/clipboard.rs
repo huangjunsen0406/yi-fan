@@ -22,6 +22,32 @@ const INTERVAL_ACTIVE_MS: u64 = 350;
 const INTERVAL_IDLE_MS: u64 = 900;
 const IDLE_AFTER_UNCHANGED: u32 = 8;
 
+/// Cheap clipboard revision token (skip `read_text` when unchanged).
+/// - macOS: NSPasteboard.changeCount
+/// - Windows: GetClipboardSequenceNumber (Win32)
+/// - Linux: None → adaptive full-text poll (Wayland has no global change broadcast)
+#[cfg(target_os = "macos")]
+fn clipboard_revision() -> Option<i64> {
+    use objc2_app_kit::NSPasteboard;
+    let pb = NSPasteboard::generalPasteboard();
+    Some(pb.changeCount() as i64)
+}
+
+#[cfg(target_os = "windows")]
+fn clipboard_revision() -> Option<i64> {
+    // https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getclipboardsequencenumber
+    #[link(name = "user32")]
+    extern "system" {
+        fn GetClipboardSequenceNumber() -> u32;
+    }
+    unsafe { Some(GetClipboardSequenceNumber() as i64) }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+fn clipboard_revision() -> Option<i64> {
+    None
+}
+
 /// Start the clipboard polling loop.
 /// Each call increments the generation counter, causing any previous thread to exit.
 #[tauri::command]
@@ -36,10 +62,22 @@ pub fn start_clipboard_monitor(app: tauri::AppHandle) {
         // Initialize with current clipboard content to avoid triggering on start
         let mut previous_text = app.clipboard().read_text().unwrap_or_default();
         let mut unchanged_ticks: u32 = 0;
+        let mut last_revision = clipboard_revision();
+        let use_revision = last_revision.is_some();
 
+        let mode = if !use_revision {
+            "off-poll-text"
+        } else if cfg!(target_os = "macos") {
+            "macos-changeCount"
+        } else if cfg!(target_os = "windows") {
+            "win-sequenceNumber"
+        } else {
+            "revision"
+        };
         println!(
-            "[clipboard] Initialized with current clipboard ({} chars)",
-            previous_text.len()
+            "[clipboard] Initialized ({} chars), revision_watch={}",
+            previous_text.len(),
+            mode
         );
 
         loop {
@@ -62,8 +100,26 @@ pub fn start_clipboard_monitor(app: tauri::AppHandle) {
                 if let Ok(content) = app.clipboard().read_text() {
                     previous_text = content.trim().to_string();
                 }
+                last_revision = clipboard_revision();
                 unchanged_ticks = 0;
                 continue;
+            }
+
+            // macOS/Windows: skip expensive read_text when revision token unchanged
+            if use_revision {
+                if let Some(rev) = clipboard_revision() {
+                    if Some(rev) == last_revision {
+                        unchanged_ticks = unchanged_ticks.saturating_add(1);
+                        let interval = if unchanged_ticks >= IDLE_AFTER_UNCHANGED {
+                            INTERVAL_IDLE_MS
+                        } else {
+                            INTERVAL_ACTIVE_MS
+                        };
+                        std::thread::sleep(std::time::Duration::from_millis(interval));
+                        continue;
+                    }
+                    last_revision = Some(rev);
+                }
             }
 
             match app.clipboard().read_text() {
@@ -153,7 +209,9 @@ pub fn pause_clipboard_monitor_temp() {
 /// Resume clipboard monitoring after a pause (decrements ref count; resumes when count reaches 0).
 #[tauri::command]
 pub fn resume_clipboard_monitor_temp() {
-    PAUSE_COUNT.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |current| {
-        Some(current.saturating_sub(1))
-    }).ok();
+    PAUSE_COUNT
+        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |current| {
+            Some(current.saturating_sub(1))
+        })
+        .ok();
 }

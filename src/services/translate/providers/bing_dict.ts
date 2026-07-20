@@ -12,8 +12,9 @@ export const bingDict: TranslateProvider = {
   label: '必应词典',
   icon: 'ph-book-open',
   needsConfig: false,
-  description: '使用必应词典查询单词释义，适合查词，免费无需配置。',
+  description: '使用必应词典查询单词释义，适合查词，免费无需配置。离线时回退本地词库。',
   langMap,
+  capabilities: { dictionary: true },
 
   async translate(text) {
     const word = text.trim()

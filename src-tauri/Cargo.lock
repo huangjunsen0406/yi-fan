@@ -8490,6 +8490,7 @@ dependencies = [
  "dirs 5.0.1",
  "image 0.25.10",
  "lingua",
+ "objc2-app-kit",
  "screenshots",
  "selection",
  "serde",

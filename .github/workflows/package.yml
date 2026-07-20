@@ -67,6 +67,13 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          shared-key: tauri-${{ matrix.target }}
+          cache-on-failure: true
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -139,6 +146,13 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          shared-key: tauri-${{ matrix.target }}
+          cache-on-failure: true
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -187,6 +201,13 @@ jobs:
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          shared-key: tauri-linux-x86_64
+          cache-on-failure: true
 
       - name: Install system dependencies
         run: |

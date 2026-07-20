@@ -7,6 +7,14 @@ export interface ConfigField {
   placeholder: string
 }
 
+/** Provider capability flags for routing (offline / dictionary priority) */
+export interface ProviderCapabilities {
+  /** True if engine can work without network (local dict) */
+  offline?: boolean
+  /** Dictionary / word lookup style (prefer local dict when offline or single word) */
+  dictionary?: boolean
+}
+
 export interface TranslateProvider {
   /** Unique engine key, e.g. 'google', 'baidu' */
   name: string
@@ -27,6 +35,18 @@ export interface TranslateProvider {
   /** Supported language map: display name → engine-specific code */
   langMap: Record<string, string>
 
-  /** Core translate function */
-  translate(text: string, from: string, to: string, config?: Record<string, string>): Promise<string>
+  /** Optional capability flags */
+  capabilities?: ProviderCapabilities
+
+  /**
+   * Core translate function.
+   * Prefer throwing `TranslateError` from `services/errors` for structured codes;
+   * the registry normalizes via `toTranslateError`.
+   */
+  translate(
+    text: string,
+    from: string,
+    to: string,
+    config?: Record<string, string>
+  ): Promise<string>
 }

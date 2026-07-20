@@ -1,0 +1,50 @@
+/**
+ * Local font stack — no Google Fonts CDN.
+ * Inter is optional system-ui first; CJK uses platform fonts for small bundle size.
+ */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: local('Inter'), local('Inter Regular'), local('SF Pro Text'), local('Segoe UI');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: local('Inter Medium'), local('SF Pro Text Medium'), local('Segoe UI Semibold');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: local('Inter SemiBold'), local('SF Pro Text Semibold'), local('Segoe UI Semibold');
+}
+
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: local('Inter Bold'), local('SF Pro Text Bold'), local('Segoe UI Bold');
+}
+
+/* CJK: prefer system fonts fully offline (no Noto CDN download) */
+@font-face {
+  font-family: 'Noto Sans SC';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src:
+    local('PingFang SC'),
+    local('Hiragino Sans GB'),
+    local('Microsoft YaHei'),
+    local('Noto Sans SC'),
+    local('Source Han Sans SC'),
+    local('WenQuanYi Micro Hei');
+}

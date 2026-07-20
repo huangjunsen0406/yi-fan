@@ -7,6 +7,7 @@ import "@phosphor-icons/web/regular";
 import "@phosphor-icons/web/fill";
 import App from "./App.vue";
 import router from "./router";
+import "./styles/fonts.css";
 import "./styles.css";
 
 import { useSettingsStore } from "./stores/settings";

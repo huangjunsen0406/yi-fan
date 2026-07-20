@@ -126,7 +126,10 @@ async function handleInstallUpdate() {
     updateProgress.value = '安装完成，请手动重启'
   } catch (e: any) {
     lastUpdateError.value = e.message || '安装失败'
-    Message.error(lastUpdateError.value)
+    Message.error({
+      content: lastUpdateError.value + '（可点「GitHub 发布页」手动下载）',
+      duration: 5000,
+    })
     updateInstalling.value = false
     updateProgress.value = ''
     updateProgressPct.value = 0
@@ -231,7 +234,10 @@ async function handleOpenRepo() {
           </button>
         </div>
       </div>
-      <p v-if="lastUpdateError" class="update-status err">{{ lastUpdateError }}</p>
+      <p v-if="lastUpdateError" class="update-status err">
+        {{ lastUpdateError }}
+        <button class="linkish" type="button" @click="handleOpenReleases">打开发布页手动安装</button>
+      </p>
       <p class="update-hint">
         通过 GitHub Releases 分发，无需自建服务器。macOS 未公证时首次打开可能需右键「打开」。
       </p>
@@ -240,8 +246,16 @@ async function handleOpenRepo() {
     <div class="config-card about-card">
       <div class="about-logo">易翻</div>
       <p class="about-ver">版本 {{ appVersion }}</p>
+      <p class="about-author">
+        作者
+        <button class="about-author-link" type="button" @click="handleOpenRepo">huangjunsen</button>
+      </p>
       <p class="about-desc">基于 Tauri 2 + Vue 3 的轻量翻译工具。</p>
       <p class="about-desc">集成 21 种翻译引擎，支持全局快捷键呼出。</p>
+      <p class="about-credit">
+        灵感来自 uTools 插件「易翻」：体验很好，但 uTools 插件生态需会员/付费才能长期使用，
+        因此独立做了这款开源、免费的桌面版，方便自己与他人离线安装、自由配置引擎。
+      </p>
       <div class="about-links">
         <span class="about-badge">Tauri 2</span>
         <span class="about-badge">Vue 3</span>
@@ -378,7 +392,38 @@ async function handleOpenRepo() {
   -webkit-text-fill-color: transparent;
 }
 .about-ver { margin-top: 8px; color: var(--color-text-secondary); font-size: 13px; }
+.about-author {
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+.about-author-link {
+  margin-left: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-primary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+}
+.about-author-link:hover {
+  text-decoration: underline;
+}
 .about-desc { margin-top: 6px; font-size: 13px; color: var(--color-text-secondary); }
+.about-credit {
+  margin: 14px auto 0;
+  max-width: 360px;
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--color-text-placeholder);
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--color-bg-page);
+  border: 1px solid var(--color-border-light);
+}
 .about-links { display: flex; gap: 8px; justify-content: center; margin-top: 16px; flex-wrap: wrap; }
 .about-badge {
   padding: 4px 12px;
@@ -391,5 +436,14 @@ async function handleOpenRepo() {
 .about-badge.link {
   cursor: pointer;
   border: 1px solid var(--color-primary-border, rgba(79, 110, 247, 0.3));
+}
+.linkish {
+  margin-left: 8px;
+  color: var(--color-primary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  text-decoration: underline;
 }
 </style>

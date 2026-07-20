@@ -1,26 +1,39 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { listen } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
 import { Message } from '@arco-design/web-vue'
 import { useTranslateStore } from './stores/translate'
 import { useSettingsStore } from './stores/settings'
-import { registerAllHotkeys } from './services/hotkeys'
+
 import {
   getAutoCheck,
   getSkippedVersion,
   checkForUpdates,
 } from './services/update'
 import { initWindowStatePersistence } from './services/windowState'
+import { isOnboardingDone } from './services/onboarding'
+import { bindNetworkListeners, isOnline } from './services/network'
+import { loadGlossary } from './services/glossary'
+import OnboardingModal from './components/OnboardingModal.vue'
 
 const router = useRouter()
 const store = useTranslateStore()
+const showOnboarding = ref(false)
 
 onMounted(async () => {
   const settings = useSettingsStore()
   await settings.init()
   await store.initDefaults()
+  bindNetworkListeners()
+  void loadGlossary()
+
+  try {
+    showOnboarding.value = !(await isOnboardingDone())
+  } catch {
+    showOnboarding.value = false
+  }
 
   // 窗口位置 / 大小 / 置顶记忆
   try {
@@ -32,14 +45,42 @@ onMounted(async () => {
 
   // ── 全局快捷键：仅从 settings 注册（单源） ──
   try {
+    const { registerAllHotkeysDetailed, formatHotkeyFailure } = await import(
+      './services/hotkeys'
+    )
     const savedHotkeys = settings.getConfig('_hotkeys')
-    const failCount = await registerAllHotkeys(savedHotkeys)
-    if (failCount > 0) {
-      console.warn(`[hotkeys] ${failCount} shortcut(s) failed to register`)
+    const result = await registerAllHotkeysDetailed(savedHotkeys)
+    if (result.failCount > 0) {
+      const names = result.failed.map((f) => formatHotkeyFailure(f)).join('；')
+      console.warn(`[hotkeys] ${result.failCount} shortcut(s) failed:`, result.failed)
+      Message.warning({
+        content: `${result.failCount} 个快捷键未生效：${names}。请到设置 → 快捷键更换组合（系统无法列出占用方）`,
+        duration: 6000,
+      })
     }
   } catch (e) {
     console.error('[hotkeys] bootstrap failed:', e)
   }
+
+  // 离线提示
+  if (!isOnline.value) {
+    Message.warning({ content: '当前离线，在线翻译引擎可能不可用', duration: 4000 })
+  }
+
+  // 默认引擎健康检查（延迟，不阻塞）
+  setTimeout(async () => {
+    if (!isOnline.value) return
+    try {
+      const { checkDefaultEngineHealth } = await import('./services/health')
+      const h = await checkDefaultEngineHealth()
+      if (!h.ok) {
+        Message.warning({
+          content: `默认引擎「${h.engine}」异常：${h.message}，可在设置中更换`,
+          duration: 5000,
+        })
+      }
+    } catch { /* ignore */ }
+  }, 6000)
 
   // ── 启动静默检查更新（ccMesh 同款：有新版本再提示） ──
   setTimeout(async () => {
@@ -70,11 +111,12 @@ onMounted(async () => {
     } catch { /* ignore in browser */ }
   }
 
-  // 1. 划词翻译（静默：复制结果 + 轻提示）
+  // 1. 划词翻译（静默：复制 + 短气泡展示译文）
   await listen<string>('selection-text', async (event) => {
     const res = await store.silentTranslate(event.payload)
-    if (res.ok) {
-      Message.success({ content: '已翻译并复制', duration: 1500 })
+    if (res.ok && res.result) {
+      const preview = res.result.length > 80 ? res.result.slice(0, 80) + '…' : res.result
+      Message.success({ content: `已复制：${preview}`, duration: 2800 })
     } else if (res.error) {
       Message.error({ content: res.error, duration: 2500 })
     }
@@ -100,8 +142,9 @@ onMounted(async () => {
   await listen<string>('clipboard-text', async (event) => {
     router.push('/')
     const res = await store.silentTranslate(event.payload)
-    if (res.ok) {
-      Message.success({ content: '剪贴板已翻译并复制', duration: 1500 })
+    if (res.ok && res.result) {
+      const preview = res.result.length > 80 ? res.result.slice(0, 80) + '…' : res.result
+      Message.success({ content: `剪贴板已复制：${preview}`, duration: 2800 })
     } else if (res.error) {
       Message.error({ content: res.error, duration: 2500 })
     }
@@ -172,4 +215,5 @@ onMounted(async () => {
 
 <template>
   <router-view />
+  <OnboardingModal v-if="showOnboarding" @close="showOnboarding = false" />
 </template>

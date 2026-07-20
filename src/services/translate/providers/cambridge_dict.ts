@@ -13,8 +13,9 @@ export const cambridgeDict: TranslateProvider = {
   label: '剑桥词典',
   icon: 'ph-graduation-cap',
   needsConfig: false,
-  description: '使用剑桥词典查询英语单词释义（仅支持英语），免费无需配置。',
+  description: '使用剑桥词典查询英语单词释义（仅支持英语），免费无需配置。离线时回退本地词库。',
   langMap,
+  capabilities: { dictionary: true },
 
   async translate(text, _from, to) {
     const word = text.trim()

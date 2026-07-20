@@ -22,9 +22,11 @@ const searchKeyword = ref('')
 const filterEngine = ref('')
 const filterDate = ref('')
 const starredOnly = ref(false)
+const dateQuick = ref<'' | 'today' | 'week'>('')
 const engineOptions = ref<string[]>([])
 const loading = ref(true)
 const showClearConfirm = ref(false)
+const clearConfirmStep = ref(0)
 const selectedIds = ref<Set<number>>(new Set())
 const selectAllPage = computed({
   get: () =>
@@ -55,13 +57,36 @@ function engineLabel(name: string) {
   return providers.find((p) => p.name === name)?.label || name
 }
 
+function todayStr() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function weekStartStr() {
+  const d = new Date()
+  const day = d.getDay() || 7
+  d.setDate(d.getDate() - day + 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 function buildQuery(): HistoryQuery {
+  let date = filterDate.value || undefined
+  if (dateQuick.value === 'today') date = todayStr()
+  // week filter: use date as start - history only supports single day LIKE prefix
+  // for week we filter client-side after load if needed; use date as week start for prefix won't work for range
+  // So for week we load more and filter - for simplicity set date only for today; week uses empty date + client filter flag
   return {
     keyword: searchKeyword.value.trim() || undefined,
     engine: filterEngine.value || undefined,
-    date: filterDate.value || undefined,
+    date: dateQuick.value === 'week' ? undefined : date,
     starredOnly: starredOnly.value || undefined,
   }
+}
+
+function filterByWeek(list: HistoryRecord[]): HistoryRecord[] {
+  if (dateQuick.value !== 'week') return list
+  const start = weekStartStr()
+  return list.filter((r) => (r.created_at || '') >= start)
 }
 
 onMounted(async () => {
@@ -75,9 +100,17 @@ async function loadRecords() {
   loading.value = true
   try {
     const q = buildQuery()
-    totalCount.value = await getHistoryCount(q)
-    const offset = (currentPage.value - 1) * pageSize
-    records.value = await getHistory(pageSize, offset, q)
+    if (dateQuick.value === 'week') {
+      // Load a batch and filter by week start (local)
+      const all = filterByWeek(await getHistory(500, 0, { ...q, date: undefined }))
+      totalCount.value = all.length
+      const offset = (currentPage.value - 1) * pageSize
+      records.value = all.slice(offset, offset + pageSize)
+    } else {
+      totalCount.value = await getHistoryCount(q)
+      const offset = (currentPage.value - 1) * pageSize
+      records.value = await getHistory(pageSize, offset, q)
+    }
   } catch (e) {
     console.warn('Load history failed:', e)
   } finally {
@@ -94,8 +127,10 @@ function onFilterChange() {
   }, 200)
 }
 
-watch([filterEngine, filterDate, starredOnly], () => {
+watch([filterEngine, filterDate, starredOnly, dateQuick], () => {
   currentPage.value = 1
+  if (dateQuick.value === 'today') filterDate.value = todayStr()
+  if (dateQuick.value === 'week') filterDate.value = ''
   loadRecords()
 })
 
@@ -125,19 +160,31 @@ async function handleToggleStar(record: HistoryRecord) {
 }
 
 async function handleClearAll() {
+  if (clearConfirmStep.value < 1) {
+    clearConfirmStep.value = 1
+    return
+  }
   await clearHistory()
   records.value = []
   totalCount.value = 0
   currentPage.value = 1
   showClearConfirm.value = false
+  clearConfirmStep.value = 0
   engineOptions.value = []
+  selectedIds.value = new Set()
+}
+
+async function fetchExportList(): Promise<HistoryRecord[]> {
+  const q = buildQuery()
+  let list = await getHistory(2000, 0, q)
+  if (dateQuick.value === 'week') list = filterByWeek(list)
+  return list
 }
 
 async function handleExport() {
   try {
     // Export current filter (up to 2000 rows), not only current page
-    const q = buildQuery()
-    const list = await getHistory(2000, 0, q)
+    const list = await fetchExportList()
     const json = JSON.stringify(list, null, 2)
     const blob = new Blob([json], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
@@ -148,6 +195,45 @@ async function handleExport() {
     URL.revokeObjectURL(url)
   } catch (e) {
     console.warn('Export failed:', e)
+  }
+}
+
+/** Bilingual Markdown export for filtered history */
+async function handleExportMarkdown() {
+  try {
+    const list = await fetchExportList()
+    const lines: string[] = [
+      '# 易翻 · 双语历史',
+      '',
+      `导出时间：${new Date().toLocaleString()}`,
+      `共 ${list.length} 条`,
+      '',
+    ]
+    for (const r of list) {
+      const eng = engineLabel(r.engine)
+      lines.push(`## ${eng} · ${r.source_lang} → ${r.target_lang}`)
+      if (r.created_at) lines.push(`*${r.created_at}*`)
+      lines.push('')
+      lines.push('**原文**')
+      lines.push('')
+      lines.push(r.source_text)
+      lines.push('')
+      lines.push('**译文**')
+      lines.push('')
+      lines.push(r.result_text)
+      lines.push('')
+      lines.push('---')
+      lines.push('')
+    }
+    const blob = new Blob([lines.join('\n')], { type: 'text/markdown;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `yi-fan-history-${new Date().toISOString().slice(0, 10)}.md`
+    a.click()
+    URL.revokeObjectURL(url)
+  } catch (e) {
+    console.warn('Markdown export failed:', e)
   }
 }
 
@@ -185,6 +271,7 @@ function clearFilters() {
   filterEngine.value = ''
   filterDate.value = ''
   starredOnly.value = false
+  dateQuick.value = ''
   currentPage.value = 1
   loadRecords()
 }
@@ -226,8 +313,11 @@ function clearFilters() {
         >
           <i class="ph ph-trash"></i> 删除选中 ({{ selectedIds.size }})
         </button>
-        <button class="toolbar-btn" @click="handleExport" :disabled="totalCount === 0 && records.length === 0">
-          <i class="ph ph-download-simple"></i> 导出筛选
+        <button class="toolbar-btn" @click="handleExport" :disabled="totalCount === 0 && records.length === 0" title="导出 JSON">
+          <i class="ph ph-download-simple"></i> JSON
+        </button>
+        <button class="toolbar-btn" @click="handleExportMarkdown" :disabled="totalCount === 0 && records.length === 0" title="导出双语 Markdown">
+          <i class="ph ph-article"></i> 双语 MD
         </button>
         <button class="toolbar-btn danger" @click="showClearConfirm = true" :disabled="totalCount === 0">
           <i class="ph ph-trash"></i> 清空
@@ -252,16 +342,18 @@ function clearFilters() {
         <i class="ph" :class="starredOnly ? 'ph-fill ph-star' : 'ph-star'"></i>
         收藏
       </button>
-      <button v-if="hasActiveFilter" type="button" class="filter-clear" @click="clearFilters">
+      <button type="button" class="filter-star" :class="{ active: dateQuick === 'today' }" @click="dateQuick = dateQuick === 'today' ? '' : 'today'">今天</button>
+      <button type="button" class="filter-star" :class="{ active: dateQuick === 'week' }" @click="dateQuick = dateQuick === 'week' ? '' : 'week'">本周</button>
+      <button v-if="hasActiveFilter || dateQuick" type="button" class="filter-clear" @click="clearFilters">
         清除筛选
       </button>
     </div>
 
-    <!-- Clear confirmation -->
+    <!-- Clear confirmation (two-step) -->
     <div v-if="showClearConfirm" class="confirm-bar">
-      <span>确定清空所有历史记录？</span>
-      <button class="confirm-yes" @click="handleClearAll">确定</button>
-      <button class="confirm-no" @click="showClearConfirm = false">取消</button>
+      <span>{{ clearConfirmStep === 0 ? '确定清空所有历史记录？' : '再次确认：此操作不可恢复！' }}</span>
+      <button class="confirm-yes" @click="handleClearAll">{{ clearConfirmStep === 0 ? '继续' : '彻底清空' }}</button>
+      <button class="confirm-no" @click="showClearConfirm = false; clearConfirmStep = 0">取消</button>
     </div>
 
     <!-- Records -->

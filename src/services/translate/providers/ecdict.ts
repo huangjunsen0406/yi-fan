@@ -11,22 +11,49 @@ export const ecdict: TranslateProvider = {
   label: 'ECDICT',
   icon: 'ph-book',
   needsConfig: false,
-  description: '使用 ECDICT 开源英汉词典查询，适合查词，免费无需配置。',
+  description:
+    'ECDICT 英汉词典：优先本地词库（离线可用），未命中再请求在线接口。适合查词。',
   langMap,
+  capabilities: { offline: true, dictionary: true },
 
   async translate(text) {
     const word = text.trim()
+    // Local-first (also covered by registry; keep for direct provider calls)
+    try {
+      const { lookupLocalDict } = await import('../../localDict')
+      const local = await lookupLocalDict(word)
+      if (local) return local
+    } catch {
+      /* continue online */
+    }
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      throw new Error(`离线且本地词库未收录: ${word}`)
+    }
+
     const res = await fetch('https://pot-app.com/api/dict', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text: word }),
     })
-    const data = await res.json() as any
-    if (typeof data === 'string') return data
-    if (data.explanations) {
-      return data.explanations.map((e: any) => `${e.trait} ${e.explains?.join('; ')}`).join('\n')
+    const data = (await res.json()) as any
+    let out = ''
+    if (typeof data === 'string') out = data
+    else if (data.explanations) {
+      out = data.explanations
+        .map((e: any) => `${e.trait} ${e.explains?.join('; ')}`)
+        .join('\n')
+    } else if (data.translation) out = data.translation
+    else out = JSON.stringify(data)
+
+    if (out) {
+      try {
+        const { rememberLocalDict } = await import('../../localDict')
+        await rememberLocalDict(word, out)
+      } catch {
+        /* ignore */
+      }
     }
-    if (data.translation) return data.translation
-    return JSON.stringify(data)
+    return out
   },
 }

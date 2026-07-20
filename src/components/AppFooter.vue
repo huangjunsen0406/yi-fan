@@ -86,24 +86,27 @@ function goToUpdate() {
 </script>
 
 <template>
-  <footer class="app-footer">
+  <footer class="app-footer" role="contentinfo" aria-label="主窗口工具栏">
     <button
       class="footer-btn mode-btn"
       :title="store.mode === 'translate' ? '切换到代码模式' : '切换到翻译模式'"
+      :aria-label="store.mode === 'translate' ? '切换到代码模式' : '切换到翻译模式'"
       @click="store.toggleMode()"
     >
-      <i v-if="store.mode === 'translate'" class="ph ph-arrows-left-right"></i>
-      <i v-else class="ph ph-code"></i>
+      <i v-if="store.mode === 'translate'" class="ph ph-arrows-left-right" aria-hidden="true"></i>
+      <i v-else class="ph ph-code" aria-hidden="true"></i>
     </button>
     <div class="footer-spacer"></div>
     <button
       class="footer-btn theme-btn"
       :title="`主题: ${themeMode === 'light' ? '浅色' : themeMode === 'dark' ? '深色' : '跟随系统'}（点击切换）`"
+      :aria-label="`切换主题，当前：${themeMode === 'light' ? '浅色' : themeMode === 'dark' ? '深色' : '跟随系统'}`"
       @click="cycleTheme"
     >
       <i
         class="ph"
         :class="themeMode === 'dark' ? 'ph-moon' : themeMode === 'light' ? 'ph-sun' : 'ph-desktop'"
+        aria-hidden="true"
       ></i>
     </button>
     <button
@@ -111,27 +114,32 @@ function goToUpdate() {
       :class="{ active: store.alwaysOnTop }"
       @click="store.toggleAlwaysOnTop()"
       :title="store.alwaysOnTop ? '取消置顶' : '窗口置顶'"
+      :aria-label="store.alwaysOnTop ? '取消置顶' : '窗口置顶'"
+      :aria-pressed="store.alwaysOnTop"
     >
-      <i class="ph" :class="store.alwaysOnTop ? 'ph-push-pin-simple-slash' : 'ph-push-pin-simple'"></i>
+      <i class="ph" :class="store.alwaysOnTop ? 'ph-push-pin-simple-slash' : 'ph-push-pin-simple'" aria-hidden="true"></i>
     </button>
     <button
       class="footer-btn clipboard-btn"
       :class="{ active: clipboardActive }"
       @click="toggleClipboard"
       :title="clipboardActive ? '关闭剪贴板监听' : '开启剪贴板监听'"
+      :aria-label="clipboardActive ? '关闭剪贴板监听' : '开启剪贴板监听'"
+      :aria-pressed="clipboardActive"
     >
-      <i class="ph ph-clipboard-text"></i>
+      <i class="ph ph-clipboard-text" aria-hidden="true"></i>
     </button>
-    <button class="footer-btn" title="翻译历史" @click="goToHistory">
-      <i class="ph ph-clock-counter-clockwise"></i>
+    <button class="footer-btn" title="翻译历史" aria-label="翻译历史" @click="goToHistory">
+      <i class="ph ph-clock-counter-clockwise" aria-hidden="true"></i>
     </button>
     <button
       class="footer-btn settings-btn"
       :title="updateBadge ? `设置 · 有新版本 v${updateBadge}` : '设置'"
+      :aria-label="updateBadge ? `设置，有新版本 v${updateBadge}` : '设置'"
       @click="updateBadge ? goToUpdate() : goToSettings()"
     >
-      <i class="ph ph-gear"></i>
-      <span v-if="updateBadge" class="footer-dot"></span>
+      <i class="ph ph-gear" aria-hidden="true"></i>
+      <span v-if="updateBadge" class="footer-dot" aria-hidden="true"></span>
     </button>
   </footer>
 </template>
@@ -188,6 +196,12 @@ function goToUpdate() {
   opacity: 1;
   background: var(--color-bg-hover);
   color: var(--color-text);
+}
+
+.footer-btn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  opacity: 1;
 }
 
 .clipboard-btn.active,

@@ -14,7 +14,7 @@
 cask "yi-fan" do
   arch arm: "aarch64", intel: "x64"
 
-  version "0.2.2"
+  version "0.2.3"
   # Prefer exact hashes from GitHub Release assets. :no_check is fallback only.
   sha256 arm:   "REPLACE_WITH_AARCH64_DMG_SHA256",
          intel: "REPLACE_WITH_X64_DMG_SHA256"

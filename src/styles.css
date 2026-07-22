@@ -158,6 +158,100 @@ textarea::placeholder {
   background: var(--scrollbar-thumb-hover);
 }
 
+/* ========== Driver.js product tour (antd Tour style) ========== */
+/* Popover must stay above Tauri chrome and receive clicks even if parent sets pointer-events */
+.yifan-tour-popover.driver-popover {
+  background: var(--color-bg);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  max-width: 340px;
+  padding: 16px 18px 14px;
+  pointer-events: auto !important;
+  z-index: 1000000000;
+}
+
+.yifan-tour-popover .driver-popover-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-text);
+  margin-bottom: 6px;
+}
+
+.yifan-tour-popover .driver-popover-description {
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--color-text-secondary);
+  white-space: pre-wrap;
+}
+
+.yifan-tour-popover .driver-popover-progress-text {
+  font-size: 11px;
+  color: var(--color-text-placeholder);
+}
+
+.yifan-tour-popover .driver-popover-navigation-btns {
+  gap: 8px;
+}
+
+.yifan-tour-popover .driver-popover-prev-btn,
+.yifan-tour-popover .driver-popover-next-btn,
+.yifan-tour-popover .driver-popover-close-btn {
+  pointer-events: auto !important;
+  cursor: pointer;
+}
+
+.yifan-tour-popover .driver-popover-prev-btn,
+.yifan-tour-popover .driver-popover-next-btn {
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  padding: 7px 14px;
+  text-shadow: none;
+  /* driver.js default hover paints #f7f7f7 — override so labels stay readable */
+  transition: background-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+}
+
+.yifan-tour-popover .driver-popover-next-btn {
+  background: var(--color-primary) !important;
+  border-color: var(--color-primary) !important;
+  color: #fff !important;
+}
+
+.yifan-tour-popover .driver-popover-next-btn:hover,
+.yifan-tour-popover .driver-popover-next-btn:focus {
+  background: var(--color-primary-light, #6B83F9) !important;
+  border-color: var(--color-primary-light, #6B83F9) !important;
+  color: #fff !important;
+  opacity: 1;
+}
+
+.yifan-tour-popover .driver-popover-prev-btn:hover,
+.yifan-tour-popover .driver-popover-prev-btn:focus {
+  background: var(--color-bg-hover) !important;
+  color: var(--color-text) !important;
+  opacity: 1;
+}
+
+.yifan-tour-popover .driver-popover-close-btn {
+  color: var(--color-text-placeholder);
+}
+
+.yifan-tour-popover .driver-popover-close-btn:hover,
+.yifan-tour-popover .driver-popover-close-btn:focus {
+  color: var(--color-text);
+}
+
+.yifan-tour-popover .driver-popover-arrow-side-left,
+.yifan-tour-popover .driver-popover-arrow-side-right,
+.yifan-tour-popover .driver-popover-arrow-side-top,
+.yifan-tour-popover .driver-popover-arrow-side-bottom {
+  border-color: var(--color-bg);
+}
+
 /* Smooth theme transitions for chrome (avoid animating every text node) */
 body,
 .app-layout,

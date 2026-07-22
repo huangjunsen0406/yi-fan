@@ -64,7 +64,7 @@ function handleKeydown(e: KeyboardEvent) {
 </script>
 
 <template>
-  <section class="input-section">
+  <section class="input-section" data-tour="input">
     <textarea
       :value="modelValue"
       class="text-area"
@@ -74,23 +74,25 @@ function handleKeydown(e: KeyboardEvent) {
       @keydown="handleKeydown"
     ></textarea>
     <div class="input-footer">
-      <button
-        class="icon-btn"
-        :class="{ 'speaking': speaking }"
-        :title="speaking ? '停止' : '朗读'"
-        :disabled="!modelValue.trim()"
-        @click="handleSpeak"
-      >
-        <i class="ph" :class="speaking ? 'ph-stop-circle' : 'ph-speaker-high'"></i>
-      </button>
-      <button
-        class="icon-btn"
-        title="删除换行（清理PDF文本）"
-        :disabled="!modelValue.trim()"
-        @click="handleDeleteNewlines"
-      >
-        <i class="ph ph-text-align-justify"></i>
-      </button>
+      <div class="input-tools-left" data-tour="input-tools">
+        <button
+          class="icon-btn"
+          :class="{ 'speaking': speaking }"
+          :title="speaking ? '停止' : '朗读'"
+          :disabled="!modelValue.trim()"
+          @click="handleSpeak"
+        >
+          <i class="ph" :class="speaking ? 'ph-stop-circle' : 'ph-speaker-high'"></i>
+        </button>
+        <button
+          class="icon-btn"
+          title="删除换行（清理PDF文本）"
+          :disabled="!modelValue.trim()"
+          @click="handleDeleteNewlines"
+        >
+          <i class="ph ph-text-align-justify"></i>
+        </button>
+      </div>
       <span v-if="detectedLang" class="detected-lang">
         检测到: {{ detectedLang }}
       </span>
@@ -105,6 +107,7 @@ function handleKeydown(e: KeyboardEvent) {
       <div class="spacer"></div>
       <button
         class="icon-btn translate-btn"
+        data-tour="translate-btn"
         title="翻译 (Enter)"
         :disabled="!modelValue.trim()"
         @click="store.doTranslate()"
@@ -161,6 +164,12 @@ function handleKeydown(e: KeyboardEvent) {
   padding-top: 8px;
   gap: 8px;
   flex-shrink: 0;
+}
+
+.input-tools-left {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .detected-lang {

@@ -159,7 +159,17 @@ textarea::placeholder {
 }
 
 /* ========== Driver.js product tour (antd Tour style) ========== */
-/* Popover must stay above Tauri chrome and receive clicks even if parent sets pointer-events */
+/*
+ * driver.js sets body.driver-active * { pointer-events: none }.
+ * If destroy is interrupted (HMR / race), residual .driver-overlay can still
+ * sit fixed full-screen with pointer-events:auto and swallow every click.
+ * Keep popover clickable; hard-clean is in scrubDriverResidue().
+ */
+.driver-overlay {
+  /* clicks go to the SVG path handler inside driver; leave default */
+  z-index: 10000;
+}
+
 .yifan-tour-popover.driver-popover {
   background: var(--color-bg);
   color: var(--color-text);

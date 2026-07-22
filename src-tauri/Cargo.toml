@@ -1,6 +1,6 @@
 [package]
 name = "yi-fan"
-version = "0.2.4"
+version = "0.2.5"
 description = "易翻 - A Tauri App"
 authors = ["you"]
 edition = "2021"

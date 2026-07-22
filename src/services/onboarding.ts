@@ -2,6 +2,11 @@
  * First-run onboarding: persistence flag + Driver.js product tour.
  * Store adapter is injectable for unit tests (no Tauri required).
  * driver.js is loaded lazily so the main bundle / first paint stays light.
+ *
+ * Important: driver.js sets `body.driver-active` → CSS `pointer-events: none` on
+ * every descendant. HMR / interrupted destroy can leave that class (or a fixed
+ * overlay SVG) behind and the whole UI looks fine but is unclickable. Always
+ * hard-clean residual DOM before/after a tour.
  */
 import { load } from '@tauri-apps/plugin-store'
 import type { Config, DriveStep, Driver } from 'driver.js'
@@ -11,6 +16,14 @@ export const ONBOARDING_STORE = 'settings.json'
 export const ONBOARDING_DONE_KEY = 'onboarding_done'
 /** App version when the user last finished the tour — mismatch forces a one-time replay */
 export const ONBOARDING_DONE_VERSION_KEY = 'onboarding_done_version'
+
+/** Classes driver.js may leave on <body> */
+const DRIVER_BODY_CLASSES = [
+  'driver-active',
+  'driver-fade',
+  'driver-simple',
+  'driver-no-scroll',
+] as const
 
 export interface OnboardingStoreAdapter {
   get: <T>(key: string) => Promise<T | undefined | null>
@@ -217,6 +230,8 @@ export function createMemoryOnboardingStore(
 }
 
 let activeTour: Driver | null = null
+/** Generation counter: stale async start() after HMR / re-entry must not drive */
+let tourGeneration = 0
 
 export type StartOnboardingTourOptions = {
   store?: OnboardingStoreAdapter
@@ -238,6 +253,53 @@ function waitFrames(n = 2): Promise<void> {
 }
 
 /**
+ * Remove any leftover driver.js DOM / body classes that block clicks.
+ * Safe to call even when no tour is active (HMR, interrupted destroy, cold start).
+ */
+export function scrubDriverResidue(): void {
+  if (typeof document === 'undefined') return
+
+  const body = document.body
+  if (body) {
+    body.classList.remove(...DRIVER_BODY_CLASSES)
+    body.style.removeProperty('--driver-animation-duration')
+  }
+
+  document
+    .querySelectorAll(
+      '.driver-overlay, .driver-popover, #driver-dummy-element, #driver-popover-content'
+    )
+    .forEach((el) => el.remove())
+
+  document
+    .querySelectorAll(
+      '.driver-active-element, .driver-no-interaction, .driver-active-element-parent, .driver-active-element-parent-no-scroll'
+    )
+    .forEach((el) => {
+      el.classList.remove(
+        'driver-active-element',
+        'driver-no-interaction',
+        'driver-active-element-parent',
+        'driver-active-element-parent-no-scroll'
+      )
+      el.removeAttribute('aria-haspopup')
+      el.removeAttribute('aria-expanded')
+      el.removeAttribute('aria-controls')
+    })
+}
+
+/** Tear down active driver instance + residual DOM without bumping generation. */
+function teardownActiveTour(): void {
+  try {
+    if (activeTour?.isActive()) activeTour.destroy()
+  } catch {
+    /* ignore */
+  }
+  activeTour = null
+  scrubDriverResidue()
+}
+
+/**
  * Start Driver.js product tour (antd Tour style).
  * Marks onboarding done when the user finishes, skips, or closes.
  * driver.js is dynamically imported so first open does not pay the cost up front.
@@ -245,14 +307,16 @@ function waitFrames(n = 2): Promise<void> {
 export async function startOnboardingTour(
   options: StartOnboardingTourOptions = {}
 ): Promise<void> {
-  if (activeTour?.isActive()) {
-    activeTour.destroy()
-    activeTour = null
-  }
+  // Invalidate any in-flight start() and drop previous instance (HMR-safe)
+  const gen = ++tourGeneration
+  teardownActiveTour()
 
   await options.ensureHome?.()
+  if (gen !== tourGeneration) return
+
   // Wait for route + anchors to paint (first open is often still mounting footer/input)
   await waitFrames(2)
+  if (gen !== tourGeneration) return
 
   const steps = getOnboardingSteps()
   const driveSteps = toDriveSteps(steps)
@@ -264,15 +328,26 @@ export async function startOnboardingTour(
 
   // Prefer starting only when core anchors exist; retry briefly on cold start
   const need = '[data-tour="input"], [data-tour="settings"]'
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 12; i++) {
+    if (gen !== tourGeneration) return
     if (document.querySelector(need)) break
     await new Promise((r) => setTimeout(r, 50))
+  }
+  if (gen !== tourGeneration) return
+
+  // Anchors still missing (e.g. wrong route / mid-HMR) — do not mount a broken tour
+  if (!document.querySelector(need)) {
+    console.warn('[onboarding] tour anchors missing; skip drive to avoid click-block overlay')
+    scrubDriverResidue()
+    return
   }
 
   let finished = false
   const finish = async () => {
     if (finished) return
     finished = true
+    // Belt-and-suspenders: driver.destroy should clean up, but HMR/race can miss it
+    scrubDriverResidue()
     try {
       await markOnboardingDone(options.store, options.appVersion)
     } catch {
@@ -282,6 +357,7 @@ export async function startOnboardingTour(
   }
 
   const { driver } = await loadDriver()
+  if (gen !== tourGeneration) return
 
   const config: Config = {
     steps: driveSteps,
@@ -303,7 +379,8 @@ export async function startOnboardingTour(
     disableActiveInteraction: true,
     allowKeyboardControl: true,
     onDestroyed: () => {
-      activeTour = null
+      if (activeTour) activeTour = null
+      scrubDriverResidue()
       void finish()
     },
   }
@@ -311,10 +388,29 @@ export async function startOnboardingTour(
   activeTour = driver(config)
   // Yield once more so the popover mounts after paint, then drive
   await waitFrames(1)
-  activeTour.drive()
+  if (gen !== tourGeneration) {
+    teardownActiveTour()
+    return
+  }
+  try {
+    activeTour.drive()
+  } catch (e) {
+    console.error('[onboarding] drive failed:', e)
+    teardownActiveTour()
+  }
 }
 
+/** Public teardown: cancel in-flight starts and remove residual click-block. */
 export function destroyOnboardingTour(): void {
-  if (activeTour?.isActive()) activeTour.destroy()
-  activeTour = null
+  tourGeneration += 1
+  teardownActiveTour()
+}
+
+// Vite HMR: dispose residual overlay so hot reload never leaves a click-block
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    destroyOnboardingTour()
+  })
+  // Also scrub immediately when this module is re-evaluated after HMR
+  scrubDriverResidue()
 }

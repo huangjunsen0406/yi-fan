@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { listen } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
@@ -13,7 +13,12 @@ import {
   checkForUpdates,
 } from './services/update'
 import { initWindowStatePersistence } from './services/windowState'
-import { isOnboardingDone, startOnboardingTour } from './services/onboarding'
+import {
+  destroyOnboardingTour,
+  isOnboardingDone,
+  scrubDriverResidue,
+  startOnboardingTour,
+} from './services/onboarding'
 import { bindNetworkListeners, isOnline } from './services/network'
 import { loadGlossary } from './services/glossary'
 
@@ -31,6 +36,8 @@ async function resolveAppVersion(): Promise<string> {
 
 function scheduleOnboardingTour(appVersion: string) {
   const start = () => {
+    // Safety: never drive while residual overlay still blocks clicks
+    scrubDriverResidue()
     void startOnboardingTour({
       appVersion,
       ensureHome: async () => {
@@ -51,6 +58,9 @@ function scheduleOnboardingTour(appVersion: string) {
 }
 
 onMounted(async () => {
+  // Cold start / HMR: clear any leftover driver.js click-block before UI use
+  scrubDriverResidue()
+
   const settings = useSettingsStore()
   await settings.init()
   await store.initDefaults()
@@ -253,6 +263,11 @@ onMounted(async () => {
       console.warn('Persist clipboard state failed:', e)
     }
   })
+})
+
+// HMR / unmount: tear down tour so residual overlay never blocks next paint
+onUnmounted(() => {
+  destroyOnboardingTour()
 })
 </script>
 

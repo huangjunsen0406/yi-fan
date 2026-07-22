@@ -172,38 +172,41 @@ async function handleCopy() {
     </div>
 
     <div class="output-footer">
-      <button
-        class="icon-btn"
-        :class="{ 'speaking': speaking }"
-        :title="speaking ? '停止' : '朗读'"
-        :disabled="!store.outputText.trim()"
-        @click="handleSpeak"
-      >
-        <i class="ph" :class="speaking ? 'ph-stop-circle' : 'ph-speaker-high'"></i>
-      </button>
-      <button
-        class="icon-btn"
-        :class="{ 'copied': justCopied }"
-        :title="justCopied ? '已复制' : '复制译文'"
-        :disabled="!store.outputText.trim()"
-        @click="handleCopy"
-      >
-        <i class="ph" :class="justCopied ? 'ph-check' : 'ph-copy'"></i>
-      </button>
-      <button
-        class="icon-btn"
-        title="反向翻译"
-        :disabled="!store.outputText.trim()"
-        @click="store.reverseTranslate()"
-      >
-        <i class="ph ph-swap"></i>
-      </button>
+      <div class="output-tools-left" data-tour="output-tools">
+        <button
+          class="icon-btn"
+          :class="{ 'speaking': speaking }"
+          :title="speaking ? '停止' : '朗读'"
+          :disabled="!store.outputText.trim()"
+          @click="handleSpeak"
+        >
+          <i class="ph" :class="speaking ? 'ph-stop-circle' : 'ph-speaker-high'"></i>
+        </button>
+        <button
+          class="icon-btn"
+          :class="{ 'copied': justCopied }"
+          :title="justCopied ? '已复制' : '复制译文'"
+          :disabled="!store.outputText.trim()"
+          @click="handleCopy"
+        >
+          <i class="ph" :class="justCopied ? 'ph-check' : 'ph-copy'"></i>
+        </button>
+        <button
+          class="icon-btn"
+          title="反向翻译"
+          :disabled="!store.outputText.trim()"
+          @click="store.reverseTranslate()"
+        >
+          <i class="ph ph-swap"></i>
+        </button>
+      </div>
 
       <div class="spacer"></div>
 
       <!-- Auto-copy mode cycle -->
       <button
         class="icon-btn auto-copy-btn"
+        data-tour="auto-copy"
         :class="{ active: store.autoCopyMode !== 'disable' }"
         :title="autoCopyTitle"
         @click="store.cycleAutoCopyMode()"
@@ -212,27 +215,29 @@ async function handleCopy() {
         <span class="auto-label">{{ autoCopyLabel }}</span>
       </button>
 
-      <!-- Dynamic translate toggle -->
-      <button
-        class="icon-btn auto-copy-btn"
-        :class="{ active: store.dynamicTranslate }"
-        :title="store.dynamicTranslate ? '动态翻译: 开' : '动态翻译: 关'"
-        @click="store.toggleDynamicTranslate()"
-      >
-        <i class="ph ph-lightning"></i>
-        <span class="auto-label">动态</span>
-      </button>
+      <div class="mode-toggles" data-tour="modes">
+        <!-- Dynamic translate toggle -->
+        <button
+          class="icon-btn auto-copy-btn"
+          :class="{ active: store.dynamicTranslate }"
+          :title="store.dynamicTranslate ? '动态翻译: 开' : '动态翻译: 关'"
+          @click="store.toggleDynamicTranslate()"
+        >
+          <i class="ph ph-lightning"></i>
+          <span class="auto-label">动态</span>
+        </button>
 
-      <!-- Multi-engine toggle -->
-      <button
-        class="icon-btn multi-btn"
-        :class="{ active: store.multiEngineMode }"
-        :title="store.multiEngineMode ? '多引擎: 开' : '多引擎: 关'"
-        @click="store.toggleMultiEngine()"
-      >
-        <i class="ph ph-stack"></i>
-        <span class="auto-label">并行</span>
-      </button>
+        <!-- Multi-engine toggle -->
+        <button
+          class="icon-btn multi-btn"
+          :class="{ active: store.multiEngineMode }"
+          :title="store.multiEngineMode ? '多引擎: 开' : '多引擎: 关'"
+          @click="store.toggleMultiEngine()"
+        >
+          <i class="ph ph-stack"></i>
+          <span class="auto-label">并行</span>
+        </button>
+      </div>
     </div>
   </section>
 </template>
@@ -503,6 +508,18 @@ async function handleCopy() {
   padding-top: 8px;
   gap: 4px;
   flex-shrink: 0;
+}
+
+.mode-toggles {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.output-tools-left {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .spacer { flex: 1; }

@@ -7,6 +7,7 @@ import { useSettingsStore } from '../stores/settings'
 import { useTranslateStore } from '../stores/translate'
 import { themeMode, setThemeMode, type ThemeMode } from '../services/theme'
 import { getAvailableUpdateVersion } from '../services/update'
+import { startOnboardingTour } from '../services/onboarding'
 
 const router = useRouter()
 const settings = useSettingsStore()
@@ -83,12 +84,27 @@ function goToUpdate() {
   // Settings defaults to hotkey; about is selected via query if we add it later
   sessionStorage.setItem('yi-fan-settings-page', 'about')
 }
+
+async function replayOnboardingTour() {
+  let appVersion = '0.0.0'
+  try {
+    const { getVersion } = await import('@tauri-apps/api/app')
+    appVersion = await getVersion()
+  } catch {
+    /* browser / test */
+  }
+  if (router.currentRoute.value.path !== '/') {
+    await router.push('/')
+  }
+  await startOnboardingTour({ appVersion })
+}
 </script>
 
 <template>
   <footer class="app-footer" role="contentinfo" aria-label="主窗口工具栏">
     <button
       class="footer-btn mode-btn"
+      data-tour="mode-toggle"
       :title="store.mode === 'translate' ? '切换到代码模式' : '切换到翻译模式'"
       :aria-label="store.mode === 'translate' ? '切换到代码模式' : '切换到翻译模式'"
       @click="store.toggleMode()"
@@ -97,43 +113,54 @@ function goToUpdate() {
       <i v-else class="ph ph-code" aria-hidden="true"></i>
     </button>
     <div class="footer-spacer"></div>
-    <button
-      class="footer-btn theme-btn"
-      :title="`主题: ${themeMode === 'light' ? '浅色' : themeMode === 'dark' ? '深色' : '跟随系统'}（点击切换）`"
-      :aria-label="`切换主题，当前：${themeMode === 'light' ? '浅色' : themeMode === 'dark' ? '深色' : '跟随系统'}`"
-      @click="cycleTheme"
-    >
-      <i
-        class="ph"
-        :class="themeMode === 'dark' ? 'ph-moon' : themeMode === 'light' ? 'ph-sun' : 'ph-desktop'"
-        aria-hidden="true"
-      ></i>
-    </button>
-    <button
-      class="footer-btn pin-btn"
-      :class="{ active: store.alwaysOnTop }"
-      @click="store.toggleAlwaysOnTop()"
-      :title="store.alwaysOnTop ? '取消置顶' : '窗口置顶'"
-      :aria-label="store.alwaysOnTop ? '取消置顶' : '窗口置顶'"
-      :aria-pressed="store.alwaysOnTop"
-    >
-      <i class="ph" :class="store.alwaysOnTop ? 'ph-push-pin-simple-slash' : 'ph-push-pin-simple'" aria-hidden="true"></i>
-    </button>
-    <button
-      class="footer-btn clipboard-btn"
-      :class="{ active: clipboardActive }"
-      @click="toggleClipboard"
-      :title="clipboardActive ? '关闭剪贴板监听' : '开启剪贴板监听'"
-      :aria-label="clipboardActive ? '关闭剪贴板监听' : '开启剪贴板监听'"
-      :aria-pressed="clipboardActive"
-    >
-      <i class="ph ph-clipboard-text" aria-hidden="true"></i>
-    </button>
-    <button class="footer-btn" title="翻译历史" aria-label="翻译历史" @click="goToHistory">
-      <i class="ph ph-clock-counter-clockwise" aria-hidden="true"></i>
-    </button>
+    <div class="footer-tools" data-tour="toolbar">
+      <button
+        class="footer-btn tour-btn"
+        title="重新查看引导"
+        aria-label="重新查看引导"
+        @click="replayOnboardingTour"
+      >
+        <i class="ph ph-question" aria-hidden="true"></i>
+      </button>
+      <button
+        class="footer-btn theme-btn"
+        :title="`主题: ${themeMode === 'light' ? '浅色' : themeMode === 'dark' ? '深色' : '跟随系统'}（点击切换）`"
+        :aria-label="`切换主题，当前：${themeMode === 'light' ? '浅色' : themeMode === 'dark' ? '深色' : '跟随系统'}`"
+        @click="cycleTheme"
+      >
+        <i
+          class="ph"
+          :class="themeMode === 'dark' ? 'ph-moon' : themeMode === 'light' ? 'ph-sun' : 'ph-desktop'"
+          aria-hidden="true"
+        ></i>
+      </button>
+      <button
+        class="footer-btn pin-btn"
+        :class="{ active: store.alwaysOnTop }"
+        @click="store.toggleAlwaysOnTop()"
+        :title="store.alwaysOnTop ? '取消置顶' : '窗口置顶'"
+        :aria-label="store.alwaysOnTop ? '取消置顶' : '窗口置顶'"
+        :aria-pressed="store.alwaysOnTop"
+      >
+        <i class="ph" :class="store.alwaysOnTop ? 'ph-push-pin-simple-slash' : 'ph-push-pin-simple'" aria-hidden="true"></i>
+      </button>
+      <button
+        class="footer-btn clipboard-btn"
+        :class="{ active: clipboardActive }"
+        @click="toggleClipboard"
+        :title="clipboardActive ? '关闭剪贴板监听' : '开启剪贴板监听'"
+        :aria-label="clipboardActive ? '关闭剪贴板监听' : '开启剪贴板监听'"
+        :aria-pressed="clipboardActive"
+      >
+        <i class="ph ph-clipboard-text" aria-hidden="true"></i>
+      </button>
+      <button class="footer-btn" title="翻译历史" aria-label="翻译历史" @click="goToHistory">
+        <i class="ph ph-clock-counter-clockwise" aria-hidden="true"></i>
+      </button>
+    </div>
     <button
       class="footer-btn settings-btn"
+      data-tour="settings"
       :title="updateBadge ? `设置 · 有新版本 v${updateBadge}` : '设置'"
       :aria-label="updateBadge ? `设置，有新版本 v${updateBadge}` : '设置'"
       @click="updateBadge ? goToUpdate() : goToSettings()"
@@ -156,6 +183,12 @@ function goToUpdate() {
 
 .footer-spacer {
   flex: 1;
+}
+
+.footer-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .footer-btn {

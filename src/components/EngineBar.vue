@@ -94,7 +94,7 @@ defineExpose({ onClickOutside })
 
 <template>
   <div class="middle-bar">
-    <div class="engine-tabs">
+    <div class="engine-tabs" data-tour="engines">
       <button
         v-for="engine in engines"
         :key="engine.id"
@@ -109,7 +109,7 @@ defineExpose({ onClickOutside })
       </button>
     </div>
 
-    <div class="middle-controls">
+    <div class="middle-controls" data-tour="lang-controls">
       <!-- Bookmark -->
       <button class="icon-btn" title="收藏">
         <i class="ph ph-bookmark-simple"></i>

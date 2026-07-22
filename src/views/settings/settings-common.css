@@ -511,12 +511,20 @@
 /* ── Status Message ── */
 .status-msg {
   font-size: var(--font-size-xs);
-  padding: 4px 10px;
+  padding: 5px 10px;
   border-radius: var(--radius-sm);
+  line-height: 1.45;
 }
 
-.status-msg.success { color: #00B42A; background: rgba(0,180,42,0.06); }
-.status-msg.error { color: #F53F3F; background: rgba(245,63,63,0.06); }
+.status-msg.success {
+  color: #00B42A;
+  background: rgba(0, 180, 42, 0.06);
+}
+.status-msg.error {
+  color: #C23A3A;
+  background: rgba(245, 63, 63, 0.06);
+  border: 1px solid rgba(245, 63, 63, 0.12);
+}
 .status-msg.loading { color: var(--color-primary); }
 
 /* ── Info Card ── */
@@ -530,9 +538,29 @@
   margin-bottom: 16px;
 }
 
-.info-card i { font-size: 20px; color: var(--color-primary); flex-shrink: 0; margin-top: 1px; }
-.info-card strong { font-size: var(--font-size-sm); color: var(--color-text); display: block; margin-bottom: 3px; }
-.info-card p { font-size: var(--font-size-xs); color: var(--color-text-secondary); line-height: 1.5; }
+.info-card i {
+  font-size: 18px;
+  color: var(--color-primary);
+  flex-shrink: 0;
+  margin-top: 2px;
+  line-height: 1;
+}
+.info-card strong {
+  font-size: var(--font-size-sm);
+  color: var(--color-text);
+  display: block;
+  margin-bottom: 4px;
+  line-height: 1.4;
+}
+.info-card p {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  line-height: 1.55;
+  margin: 0;
+}
+.info-card p + p {
+  margin-top: 6px;
+}
 
 .info-card.small {
   padding: 10px 14px;

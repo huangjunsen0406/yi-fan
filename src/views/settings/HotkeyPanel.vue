@@ -5,11 +5,12 @@ import { useSettingsStore } from '../../stores/settings'
 import {
   HOTKEY_DEFS,
   DEFAULT_HOTKEYS,
+  getDefaultHotkeys,
+  sanitizeHotkeyBindings,
   registerAllHotkeysDetailed,
   registerOneHotkey,
   unregisterAllHotkeys,
   hotkeyConflictHint,
-  formatHotkeyFailure,
   type HotkeyRegisterFailure,
 } from '../../services/hotkeys'
 
@@ -42,8 +43,16 @@ const isMac =
 
 function loadSaved() {
   const saved = settings.getConfig('_hotkeys')
+  // Migrate illegal mac-style "Cmd" bindings on Windows → platform defaults
+  const { bindings, changed } = sanitizeHotkeyBindings(saved)
   for (const hk of hotkeys.value) {
-    if (saved[hk.id]) hk.value = saved[hk.id]
+    hk.value = bindings[hk.id] || hk.value
+    if (changed) settings.setConfig('_hotkeys', hk.id, hk.value)
+  }
+  if (changed) {
+    void settings.save().catch(() => {
+      /* ignore */
+    })
   }
 }
 loadSaved()
@@ -56,6 +65,13 @@ function hotkeyBindingsFromUi(): Record<string, string> {
   return map
 }
 
+function shortFailReason(key: string): string {
+  if (!isMac && /\bCmd\b/i.test(key)) {
+    return 'Windows 无 Cmd 键，请改用 Control/Alt/Shift'
+  }
+  return '可能与系统或其他应用冲突'
+}
+
 function applyProbeResult(failed: HotkeyRegisterFailure[]) {
   lastProbe.value = failed
   const failIds = new Set(failed.map((f) => f.id))
@@ -66,9 +82,10 @@ function applyProbeResult(failed: HotkeyRegisterFailure[]) {
     }
     if (failIds.has(hk.id)) {
       const f = failed.find((x) => x.id === hk.id)!
+      // Keep row status short; long tips live in the summary card below
       hk.status = {
         type: 'error',
-        message: `注册失败：可能与系统或其他应用冲突。${hotkeyConflictHint(f.key)}`,
+        message: `注册失败 · ${shortFailReason(f.key)}`,
       }
     } else {
       hk.status = { type: 'success', message: `✓ 可用 ${hk.value}` }
@@ -77,20 +94,17 @@ function applyProbeResult(failed: HotkeyRegisterFailure[]) {
 }
 
 async function restoreDefaultHotkeys() {
+  const defaults = getDefaultHotkeys()
   for (const hk of hotkeys.value) {
-    hk.value = DEFAULT_HOTKEYS[hk.id] || ''
+    hk.value = defaults[hk.id] || DEFAULT_HOTKEYS[hk.id] || ''
     hk.status = { type: 'idle', message: '' }
     settings.setConfig('_hotkeys', hk.id, hk.value)
   }
   await settings.save()
-  const r = await registerAllHotkeysDetailed(DEFAULT_HOTKEYS)
+  const r = await registerAllHotkeysDetailed(defaults)
   applyProbeResult(r.failed)
   if (r.failCount === 0) Message.success('已恢复默认快捷键')
-  else {
-    Message.error(
-      `${r.failCount} 个默认快捷键仍无法注册：${r.failed.map(formatHotkeyFailure).join('；')}`
-    )
-  }
+  else Message.warning(`${r.failCount} 个默认快捷键仍无法注册，请在下方更换组合`)
 }
 
 /** 试注册全部当前组合（非系统扫描：平台无 API 列出占用方） */
@@ -106,10 +120,7 @@ async function probeAllHotkeys() {
     if (r.failCount === 0) {
       Message.success(`全部 ${r.ok.length} 个快捷键注册成功`)
     } else {
-      Message.warning({
-        content: `${r.failCount} 个失败：${r.failed.map(formatHotkeyFailure).join('；')}`,
-        duration: 5000,
-      })
+      Message.warning(`${r.failCount} 个快捷键未生效，请在下方更换组合`)
     }
   } finally {
     probing.value = false
@@ -245,39 +256,47 @@ async function registerHotkey(idx: number) {
           </button>
         </div>
         <div v-if="hk.status.type !== 'idle'" class="status-msg" :class="hk.status.type">
-          {{ hk.status.message }}
+          <i
+            class="ph"
+            :class="hk.status.type === 'success' ? 'ph-check-circle' : 'ph-warning-circle'"
+            aria-hidden="true"
+          ></i>
+          <span>{{ hk.status.message }}</span>
         </div>
       </div>
     </div>
 
-    <div v-if="lastProbe.length" class="info-card warn">
+    <div v-if="lastProbe.length" class="info-card warn probe-card">
       <i class="ph ph-warning"></i>
-      <div>
+      <div class="probe-body">
         <strong>未生效的快捷键（{{ lastProbe.length }}）</strong>
         <ul class="probe-list">
           <li v-for="f in lastProbe" :key="f.id">
-            {{ formatHotkeyFailure(f) }}
+            <span class="probe-label">{{ f.label }}</span>
+            <kbd class="probe-key">{{ f.key }}</kbd>
           </li>
         </ul>
         <p class="probe-hint">{{ hotkeyConflictHint() }}</p>
       </div>
     </div>
 
-    <div class="info-card">
+    <div class="info-card tips-card">
       <i class="ph ph-info"></i>
-      <div>
+      <div class="tips-body">
         <strong>使用说明</strong>
-        <p>
-          点击输入框后按下快捷键，再点「注册」或「检测注册」。
-          平台<strong>无法扫描</strong>是哪个程序占用了热键，只能试注册判断是否可用。
-        </p>
-        <p v-if="isMac" class="tips-extra">
-          macOS 提示：避开系统截图 ⇧⌘3/4/5、聚焦搜索 ⌘Space；可在「系统设置 → 键盘 → 键盘快捷键」对照。
-        </p>
-        <p v-else class="tips-extra">
-          Windows 提示：避开 Win 组合键与其它翻译/截图软件；冲突时请更换 Control/Alt/Shift 组合。
-        </p>
-        <p class="tips-extra">Backspace 清空当前录入。</p>
+        <ul class="tips-list">
+          <li>点击输入框后按下快捷键，再点「注册」或「检测注册」。</li>
+          <li>
+            平台无法扫描热键被哪个程序占用，只能通过试注册判断是否可用。
+          </li>
+          <li v-if="isMac">
+            macOS：避开系统截图 ⇧⌘3/4/5、聚焦搜索 ⌘Space；可在「系统设置 → 键盘 → 键盘快捷键」对照。
+          </li>
+          <li v-else>
+            Windows：避开 Win 组合键与其它翻译/截图软件；冲突时请更换 Control/Alt/Shift 组合。
+          </li>
+          <li><kbd>Backspace</kbd> 清空当前录入。</li>
+        </ul>
       </div>
     </div>
   </div>
@@ -291,27 +310,118 @@ async function registerHotkey(idx: number) {
   gap: 8px;
 }
 .info-card.warn {
-  border-color: rgba(245, 63, 63, 0.35);
-  background: rgba(245, 63, 63, 0.06);
+  border-color: rgba(245, 63, 63, 0.28);
+  background: rgba(245, 63, 63, 0.05);
+}
+.info-card.warn > i {
+  color: #F53F3F;
+}
+.probe-card {
+  align-items: flex-start;
+}
+.probe-body {
+  min-width: 0;
+  flex: 1;
 }
 .probe-list {
   margin: 8px 0 0;
-  padding-left: 1.2em;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.probe-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   font-size: 12px;
   color: var(--color-text-secondary);
-  line-height: 1.6;
+  line-height: 1.4;
+}
+.probe-label {
+  font-weight: 500;
+  color: var(--color-text);
+}
+.probe-key {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 4px;
+  border: 1px solid rgba(245, 63, 63, 0.22);
+  background: rgba(245, 63, 63, 0.06);
+  font-family: 'SF Mono', 'Fira Code', ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.3px;
+  color: #C23A3A;
 }
 .probe-hint {
-  margin-top: 8px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(245, 63, 63, 0.12);
   font-size: 12px;
-  color: var(--color-text-placeholder);
+  color: var(--color-text-secondary);
   line-height: 1.55;
 }
-.tips-extra {
+.status-msg {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
   margin-top: 6px;
-  font-size: 12px;
-  color: var(--color-text-placeholder);
+  line-height: 1.45;
+}
+.status-msg i {
+  font-size: 14px;
+  margin-top: 1px;
+  flex-shrink: 0;
+}
+.status-msg span {
+  min-width: 0;
+}
+.tips-card {
+  align-items: flex-start;
+}
+.tips-body {
+  min-width: 0;
+  flex: 1;
+}
+.tips-list {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tips-list li {
+  position: relative;
+  padding-left: 14px;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  line-height: 1.55;
+}
+.tips-list li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.55em;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  opacity: 0.45;
+}
+.tips-list kbd {
+  display: inline-block;
+  padding: 0 5px;
+  margin-right: 2px;
+  border-radius: 4px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-page);
+  font-family: 'SF Mono', 'Fira Code', ui-monospace, monospace;
+  font-size: 11px;
   line-height: 1.5;
+  color: var(--color-text);
 }
 .status-msg.warn {
   color: #d48806;

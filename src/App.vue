@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { listen } from '@tauri-apps/api/event'
 import { invoke } from '@tauri-apps/api/core'
@@ -13,14 +13,42 @@ import {
   checkForUpdates,
 } from './services/update'
 import { initWindowStatePersistence } from './services/windowState'
-import { isOnboardingDone } from './services/onboarding'
+import { isOnboardingDone, startOnboardingTour } from './services/onboarding'
 import { bindNetworkListeners, isOnline } from './services/network'
 import { loadGlossary } from './services/glossary'
-import OnboardingModal from './components/OnboardingModal.vue'
 
 const router = useRouter()
 const store = useTranslateStore()
-const showOnboarding = ref(false)
+
+async function resolveAppVersion(): Promise<string> {
+  try {
+    const { getVersion } = await import('@tauri-apps/api/app')
+    return await getVersion()
+  } catch {
+    return '0.0.0'
+  }
+}
+
+function scheduleOnboardingTour(appVersion: string) {
+  const start = () => {
+    void startOnboardingTour({
+      appVersion,
+      ensureHome: async () => {
+        if (router.currentRoute.value.path !== '/') {
+          await router.push('/')
+        }
+      },
+    })
+  }
+  const ric = (window as Window & {
+    requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number
+  }).requestIdleCallback
+  if (typeof ric === 'function') {
+    ric(start, { timeout: 1200 })
+  } else {
+    setTimeout(start, 600)
+  }
+}
 
 onMounted(async () => {
   const settings = useSettingsStore()
@@ -28,12 +56,6 @@ onMounted(async () => {
   await store.initDefaults()
   bindNetworkListeners()
   void loadGlossary()
-
-  try {
-    showOnboarding.value = !(await isOnboardingDone())
-  } catch {
-    showOnboarding.value = false
-  }
 
   // 窗口位置 / 大小 / 置顶记忆
   try {
@@ -45,11 +67,21 @@ onMounted(async () => {
 
   // ── 全局快捷键：仅从 settings 注册（单源） ──
   try {
-    const { registerAllHotkeysDetailed, formatHotkeyFailure } = await import(
-      './services/hotkeys'
-    )
+    const {
+      registerAllHotkeysDetailed,
+      formatHotkeyFailure,
+      sanitizeHotkeyBindings,
+    } = await import('./services/hotkeys')
     const savedHotkeys = settings.getConfig('_hotkeys')
-    const result = await registerAllHotkeysDetailed(savedHotkeys)
+    // Windows: migrate illegal mac-style "Cmd" bindings to platform defaults
+    const { bindings, changed } = sanitizeHotkeyBindings(savedHotkeys)
+    if (changed) {
+      for (const [id, key] of Object.entries(bindings)) {
+        settings.setConfig('_hotkeys', id, key)
+      }
+      await settings.save()
+    }
+    const result = await registerAllHotkeysDetailed(bindings)
     if (result.failCount > 0) {
       const names = result.failed.map((f) => formatHotkeyFailure(f)).join('；')
       console.warn(`[hotkeys] ${result.failCount} shortcut(s) failed:`, result.failed)
@@ -60,6 +92,17 @@ onMounted(async () => {
     }
   } catch (e) {
     console.error('[hotkeys] bootstrap failed:', e)
+  }
+
+  // First-run / new-version product tour — after bootstrap.
+  // Version mismatch forces the tour once per release (even if already seen).
+  try {
+    const appVersion = await resolveAppVersion()
+    if (!(await isOnboardingDone(undefined, appVersion))) {
+      scheduleOnboardingTour(appVersion)
+    }
+  } catch {
+    /* ignore */
   }
 
   // 离线提示
@@ -215,5 +258,4 @@ onMounted(async () => {
 
 <template>
   <router-view />
-  <OnboardingModal v-if="showOnboarding" @close="showOnboarding = false" />
 </template>

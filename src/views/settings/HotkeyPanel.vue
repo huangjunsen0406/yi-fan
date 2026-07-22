@@ -263,21 +263,23 @@ async function registerHotkey(idx: number) {
       </div>
     </div>
 
-    <div class="info-card">
+    <div class="info-card tips-card">
       <i class="ph ph-info"></i>
-      <div>
+      <div class="tips-body">
         <strong>使用说明</strong>
-        <p>
-          点击输入框后按下快捷键，再点「注册」或「检测注册」。
-          平台<strong>无法扫描</strong>是哪个程序占用了热键，只能试注册判断是否可用。
-        </p>
-        <p v-if="isMac" class="tips-extra">
-          macOS 提示：避开系统截图 ⇧⌘3/4/5、聚焦搜索 ⌘Space；可在「系统设置 → 键盘 → 键盘快捷键」对照。
-        </p>
-        <p v-else class="tips-extra">
-          Windows 提示：避开 Win 组合键与其它翻译/截图软件；冲突时请更换 Control/Alt/Shift 组合。
-        </p>
-        <p class="tips-extra">Backspace 清空当前录入。</p>
+        <ul class="tips-list">
+          <li>点击输入框后按下快捷键，再点「注册」或「检测注册」。</li>
+          <li>
+            平台无法扫描热键被哪个程序占用，只能通过试注册判断是否可用。
+          </li>
+          <li v-if="isMac">
+            macOS：避开系统截图 ⇧⌘3/4/5、聚焦搜索 ⌘Space；可在「系统设置 → 键盘 → 键盘快捷键」对照。
+          </li>
+          <li v-else>
+            Windows：避开 Win 组合键与其它翻译/截图软件；冲突时请更换 Control/Alt/Shift 组合。
+          </li>
+          <li><kbd>Backspace</kbd> 清空当前录入。</li>
+        </ul>
       </div>
     </div>
   </div>
@@ -307,11 +309,50 @@ async function registerHotkey(idx: number) {
   color: var(--color-text-placeholder);
   line-height: 1.55;
 }
-.tips-extra {
-  margin-top: 6px;
-  font-size: 12px;
-  color: var(--color-text-placeholder);
+.tips-card {
+  align-items: flex-start;
+}
+.tips-body {
+  min-width: 0;
+  flex: 1;
+}
+.tips-list {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tips-list li {
+  position: relative;
+  padding-left: 14px;
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  line-height: 1.55;
+}
+.tips-list li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.55em;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  opacity: 0.45;
+}
+.tips-list kbd {
+  display: inline-block;
+  padding: 0 5px;
+  margin-right: 2px;
+  border-radius: 4px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-page);
+  font-family: 'SF Mono', 'Fira Code', ui-monospace, monospace;
+  font-size: 11px;
   line-height: 1.5;
+  color: var(--color-text);
 }
 .status-msg.warn {
   color: #d48806;

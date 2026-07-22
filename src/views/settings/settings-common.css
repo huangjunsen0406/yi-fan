@@ -530,9 +530,29 @@
   margin-bottom: 16px;
 }
 
-.info-card i { font-size: 20px; color: var(--color-primary); flex-shrink: 0; margin-top: 1px; }
-.info-card strong { font-size: var(--font-size-sm); color: var(--color-text); display: block; margin-bottom: 3px; }
-.info-card p { font-size: var(--font-size-xs); color: var(--color-text-secondary); line-height: 1.5; }
+.info-card i {
+  font-size: 18px;
+  color: var(--color-primary);
+  flex-shrink: 0;
+  margin-top: 2px;
+  line-height: 1;
+}
+.info-card strong {
+  font-size: var(--font-size-sm);
+  color: var(--color-text);
+  display: block;
+  margin-bottom: 4px;
+  line-height: 1.4;
+}
+.info-card p {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-secondary);
+  line-height: 1.55;
+  margin: 0;
+}
+.info-card p + p {
+  margin-top: 6px;
+}
 
 .info-card.small {
   padding: 10px 14px;

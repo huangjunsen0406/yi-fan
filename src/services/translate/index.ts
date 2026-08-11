@@ -1,5 +1,5 @@
 // ── Translation Provider Registry ──
-// All 21 providers from pot-desktop, adapted to Provider interface.
+// Providers adapted from pot-desktop + Claude Messages protocol.
 // To add a new engine, create a file in providers/ and register it here.
 
 import type { TranslateProvider } from './types'
@@ -18,6 +18,7 @@ import { deepl } from './providers/deepl'
 import { bing } from './providers/bing'
 import { yandex } from './providers/yandex'
 import { openai } from './providers/openai'
+import { claude } from './providers/claude'
 import { alibaba } from './providers/alibaba'
 import { tencent } from './providers/tencent'
 import { volcengine } from './providers/volcengine'
@@ -59,6 +60,7 @@ export const providers: TranslateProvider[] = [
   caiyun,
   // ── AI / LLM ──
   openai,
+  claude,
   chatglm,
   geminipro,
   ollama,

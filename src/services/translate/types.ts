@@ -5,6 +5,11 @@ export interface ConfigField {
   label: string
   type: 'text' | 'password'
   placeholder: string
+  /**
+   * When true (default), the field must be non-empty for `isConfigured`.
+   * Set false for optional fields that have runtime defaults (e.g. model, Base URL).
+   */
+  required?: boolean
 }
 
 /** Provider capability flags for routing (offline / dictionary priority) */

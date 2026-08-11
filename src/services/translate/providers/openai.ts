@@ -45,19 +45,26 @@ export function buildOpenAIChatCompletionsUrl(requestPath?: string): string {
 export const openai: TranslateProvider = {
   name: 'openai',
   label: 'OpenAI 兼容',
-  icon: 'ph-openai-logo',
+  icon: 'ph-open-ai-logo',
   needsConfig: true,
   helpUrl: 'https://platform.openai.com/api-keys',
   description:
-    '兼容 OpenAI Chat Completions API：官方 ChatGPT、Azure、OneAPI、本地中转、多数云厂商 OpenAI 兼容接口。填写 baseURL + API Key + 模型即可。Base URL 可写主机、/v1，或完整 /chat/completions 路径。',
+    '通用 OpenAI Chat Completions 协议：官方 ChatGPT、Azure 兼容网关、OneAPI、DeepSeek、通义/智谱 OpenAI 兼容端、本地中转等。填写 API Key + 模型即可；Base URL 可写主机、/v1 或完整 /chat/completions。若中转把 Claude 等模型暴露为 Chat Completions，也走本项。',
   configFields: [
     { key: 'apiKey', label: 'API Key', type: 'password', placeholder: 'sk-... 或供应商密钥' },
-    { key: 'model', label: '模型', type: 'text', placeholder: 'gpt-4o-mini / deepseek-chat / …' },
+    {
+      key: 'model',
+      label: '模型',
+      type: 'text',
+      placeholder: 'gpt-4o-mini / deepseek-chat / …',
+      required: false,
+    },
     {
       key: 'requestPath',
-      label: 'Base URL（OpenAI 兼容）',
+      label: 'Base URL',
       type: 'text',
       placeholder: 'https://api.openai.com 或 https://proxy.example/v1',
+      required: false,
     },
   ],
   langMap,
@@ -93,6 +100,6 @@ export const openai: TranslateProvider = {
       if (result.endsWith('"')) result = result.slice(0, -1)
       return result.trim()
     }
-    throw new Error(`OpenAI 翻译错误: ${JSON.stringify(data)}`)
+    throw new Error(`OpenAI 兼容接口错误: ${JSON.stringify(data)}`)
   },
 }

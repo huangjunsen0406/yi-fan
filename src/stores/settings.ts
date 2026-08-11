@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, toRaw } from 'vue'
 import { load } from '@tauri-apps/plugin-store'
 import { providers, type TranslateProvider } from '../services/translate'
 import {
@@ -14,6 +14,15 @@ import {
 
 // 默认主页显示的 4 个引擎（免费/无需额外配置即可用的）
 const DEFAULT_ENABLED = ['google', 'bing', 'transmart', 'deepl']
+
+const SAVE_DEBOUNCE_MS = 250
+
+/**
+ * Deep-clone plain data for plugin-store IPC (avoid Vue reactive Proxy).
+ */
+function cloneStoreValue<T>(value: T): T {
+  return JSON.parse(JSON.stringify(toRaw(value as object))) as T
+}
 
 /**
  * Settings store.
@@ -30,6 +39,10 @@ export const useSettingsStore = defineStore('settings', () => {
 
   let storeInstance: Awaited<ReturnType<typeof load>> | null = null
   let initPromise: Promise<void> | null = null
+  let saveTimer: ReturnType<typeof setTimeout> | null = null
+  let saveChain: Promise<void> = Promise.resolve()
+  /** True when setConfig happened while store was not ready — flush after init */
+  let pendingSave = false
 
   async function init() {
     // Prevent redundant initialization: return existing promise if already in progress
@@ -51,6 +64,10 @@ export const useSettingsStore = defineStore('settings', () => {
         if (savedEnabled && savedEnabled.length > 0) {
           enabledEngines.value = savedEnabled
         }
+        if (pendingSave) {
+          pendingSave = false
+          await persistNow()
+        }
       } catch (e) {
         console.warn('Settings init failed (expected in browser):', e)
         // Reset so it can be retried
@@ -62,10 +79,57 @@ export const useSettingsStore = defineStore('settings', () => {
     return initPromise
   }
 
+  /**
+   * Write configs + enabledEngines to disk and force-flush.
+   * Serialized so concurrent callers cannot interleave set/save.
+   */
+  async function persistNow(): Promise<void> {
+    saveChain = saveChain.then(async () => {
+      if (!storeInstance) {
+        pendingSave = true
+        // Try to init if never started (e.g. early ServicePanel blur)
+        try {
+          await init()
+        } catch {
+          /* ignore */
+        }
+        if (!storeInstance) return
+        pendingSave = false
+      }
+      try {
+        const rawConfigs = cloneStoreValue(configs.value)
+        const rawEnabled = cloneStoreValue(enabledEngines.value)
+        await storeInstance!.set('configs', rawConfigs)
+        await storeInstance!.set('enabledEngines', rawEnabled)
+        // Force flush: autoSave debounce alone can lose data on quit / hide
+        if (typeof (storeInstance as any).save === 'function') {
+          await (storeInstance as any).save()
+        }
+      } catch (e) {
+        console.warn('Settings save failed:', e)
+        throw e
+      }
+    })
+    return saveChain
+  }
+
   async function save() {
-    if (!storeInstance) return
-    await storeInstance.set('configs', configs.value)
-    await storeInstance.set('enabledEngines', enabledEngines.value)
+    if (saveTimer) {
+      clearTimeout(saveTimer)
+      saveTimer = null
+    }
+    await persistNow()
+  }
+
+  /** Debounced save — used by setConfig so typing still lands on disk */
+  function scheduleSave(delayMs = SAVE_DEBOUNCE_MS) {
+    if (saveTimer) clearTimeout(saveTimer)
+    saveTimer = setTimeout(() => {
+      saveTimer = null
+      void persistNow().catch(() => {
+        /* logged in persistNow */
+      })
+    }, delayMs)
   }
 
   function getConfig(engineName: string): Record<string, string> {
@@ -77,6 +141,8 @@ export const useSettingsStore = defineStore('settings', () => {
       configs.value[engineName] = {}
     }
     configs.value[engineName][key] = value
+    // Auto-persist: don't rely solely on blur (packaged builds lose blur on switch/quit)
+    scheduleSave()
   }
 
   const accessor = {
@@ -104,7 +170,13 @@ export const useSettingsStore = defineStore('settings', () => {
     const provider = providers.find((p: TranslateProvider) => p.name === engineName)
     if (!provider || !provider.needsConfig) return true
     const config = getConfig(engineName)
-    return provider.configFields?.every((f) => !!config[f.key]) ?? true
+    // Only fields with required !== false must be non-empty
+    return (
+      provider.configFields?.every((f) => {
+        if (f.required === false) return true
+        return !!config[f.key]
+      }) ?? true
+    )
   }
 
   function isEnabled(engineName: string): boolean {

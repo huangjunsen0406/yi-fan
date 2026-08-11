@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useSettingsStore } from '../../stores/settings'
 import { providers, getProvider } from '../../services/translate'
 import { friendlyError } from '../../services/errors'
@@ -13,6 +13,13 @@ const currentProvider = computed(() => providers.find((p) => p.name === activeEn
 
 onMounted(() => settings.init())
 
+/** Flush pending debounce + force disk write when leaving the panel */
+onUnmounted(() => {
+  void settings.save().catch(() => {
+    /* logged in store */
+  })
+})
+
 async function autoSaveConfig() {
   await settings.save()
 }
@@ -20,6 +27,8 @@ async function autoSaveConfig() {
 async function testEngine(name: string) {
   testResults.value[name] = { status: 'loading', message: '测试中...' }
   try {
+    // Ensure latest field values are on disk before test (also helps init race)
+    await settings.save()
     const provider = getProvider(name)
     if (!provider) throw new Error('未知引擎')
     const config = settings.getConfig(name)
@@ -43,7 +52,16 @@ async function testEngine(name: string) {
       >
         <i class="ph" :class="p.icon"></i>
         <span>{{ p.label }}</span>
-        <i v-if="settings.isEnabled(p.name)" class="ph ph-check-circle engine-enabled-icon"></i>
+        <i
+          v-if="settings.isConfigured(p.name) && p.needsConfig"
+          class="ph ph-check-circle engine-configured-icon"
+          title="已配置"
+        ></i>
+        <i
+          v-else-if="settings.isEnabled(p.name)"
+          class="ph ph-check-circle engine-enabled-icon"
+          title="主页已启用"
+        ></i>
       </button>
     </div>
     <div class="engine-detail" v-if="currentProvider">
@@ -51,7 +69,10 @@ async function testEngine(name: string) {
       <p class="card-desc">{{ currentProvider.description }}</p>
       <div v-if="currentProvider.needsConfig && currentProvider.configFields" class="config-form">
         <div v-for="field in currentProvider.configFields" :key="field.key" class="form-item">
-          <label>{{ field.label }}</label>
+          <label>
+            {{ field.label }}
+            <span v-if="field.required === false" class="optional-tag">可选</span>
+          </label>
           <input
             :type="field.type"
             :placeholder="field.placeholder"
@@ -85,3 +106,21 @@ async function testEngine(name: string) {
 </template>
 
 <style src="./settings-common.css"></style>
+<style scoped>
+.optional-tag {
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-muted, #94a3b8);
+}
+.engine-configured-icon {
+  margin-left: auto;
+  color: #22c55e;
+  font-size: 16px;
+}
+.engine-enabled-icon {
+  margin-left: auto;
+  color: #94a3b8;
+  font-size: 16px;
+}
+</style>

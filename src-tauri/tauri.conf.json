@@ -27,7 +27,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://*.googleapis.com https://*.google.com https://*.bing.com https://*.deepl.com https://*.baidu.com https://*.tencent.com https://*.alibaba.com https://*.youdao.com https://*.volcengine.com https://*.niutrans.com https://*.caiyunapp.com https://*.yandex.com https://*.openai.com https://*.chatglm.cn https://*.bigmodel.cn https://*.ollama.com https://*.cambridge.org https://*.lingva.ml https://*.transmart.qq.com https://github.com https://*.github.com https://objects.githubusercontent.com https://release-assets.githubusercontent.com http://localhost:* https://localhost:*; font-src 'self' data:"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https: http://localhost:* https://localhost:* http://127.0.0.1:*; font-src 'self' data:"
     }
   },
   "bundle": {
@@ -37,7 +37,7 @@
     "category": "Utility",
     "copyright": "MIT",
     "shortDescription": "\u6613\u7ffb - \u8f7b\u91cf\u7ffb\u8bd1\u5de5\u5177",
-    "longDescription": "\u57fa\u4e8e Tauri 2 + Vue 3 \u7684\u8de8\u5e73\u53f0\u8f7b\u91cf\u7ffb\u8bd1\u5de5\u5177\uff0c\u96c6\u6210 21 \u79cd\u7ffb\u8bd1\u5f15\u64ce",
+    "longDescription": "\u57fa\u4e8e Tauri 2 + Vue 3 \u7684\u8de8\u5e73\u53f0\u8f7b\u91cf\u7ffb\u8bd1\u5de5\u5177\uff0c\u96c6\u6210\u591a\u79cd\u7ffb\u8bd1\u5f15\u64ce",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

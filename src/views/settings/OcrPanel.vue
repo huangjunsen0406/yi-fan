@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { useSettingsStore } from '../../stores/settings'
 import { ocrProviders, getOcrProvider } from '../../services/ocr'
@@ -66,6 +66,10 @@ async function saveOcrSettings() {
 async function autoSaveConfig() {
   await settings.save()
 }
+
+onUnmounted(() => {
+  void settings.save().catch(() => { /* ignore */ })
+})
 
 async function testOcrEngine(name: string) {
   ocrTestResults.value[name] = { status: 'loading', message: '测试中...' }

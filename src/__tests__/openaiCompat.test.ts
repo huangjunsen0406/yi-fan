@@ -61,6 +61,9 @@ describe('openai provider contract', () => {
     expect(keys).toEqual(expect.arrayContaining(['apiKey', 'model', 'requestPath']))
     const baseField = openai.configFields?.find((f) => f.key === 'requestPath')
     expect(baseField?.label).toMatch(/Base URL/i)
+    // model + Base URL optional (runtime defaults) — only apiKey required
+    expect(openai.configFields?.find((f) => f.key === 'model')?.required).toBe(false)
+    expect(baseField?.required).toBe(false)
   })
 })
 

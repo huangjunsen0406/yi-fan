@@ -1,4 +1,5 @@
 import { fetchWithTimeout as fetch } from '../utils/fetchWithTimeout'
+import { readTranslationResponse } from '../utils/response'
 import type { TranslateProvider } from '../types'
 
 const langMap: Record<string, string> = {
@@ -18,14 +19,13 @@ export const lingva: TranslateProvider = {
   async translate(text, from, to) {
     const fromLang = langMap[from] || 'auto'
     const toLang = langMap[to] || 'zh'
-    const plainText = text.replace(/\//g, '@@')
-    const encoded = encodeURIComponent(plainText)
+    const encoded = encodeURIComponent(text)
 
     const res = await fetch(`https://lingva.pot-app.com/api/v1/${fromLang}/${toLang}/${encoded}`, {
       method: 'GET',
     })
-    const data = await res.json() as any
-    if (data.translation) return data.translation.replace(/@@/g, '/')
+    const data = await readTranslationResponse(res, 'lingva', 'Lingva 翻译') as any
+    if (data.translation) return data.translation
     throw new Error(`Lingva 翻译错误: ${JSON.stringify(data)}`)
   },
 }

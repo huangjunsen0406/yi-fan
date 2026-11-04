@@ -1,4 +1,6 @@
 import { fetchWithTimeout as fetch } from '../utils/fetchWithTimeout'
+import { readTranslationResponse } from '../utils/response'
+import { TranslateError } from '../../errors'
 import type { TranslateProvider } from '../types'
 
 const langMap: Record<string, string> = {
@@ -36,23 +38,35 @@ export const ecdict: TranslateProvider = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text: word }),
     })
-    const data = (await res.json()) as any
+    const data = await readTranslationResponse(res, 'ecdict', 'ECDICT')
     let out = ''
-    if (typeof data === 'string') out = data
-    else if (data.explanations) {
-      out = data.explanations
-        .map((e: any) => `${e.trait} ${e.explains?.join('; ')}`)
-        .join('\n')
-    } else if (data.translation) out = data.translation
-    else out = JSON.stringify(data)
-
-    if (out) {
-      try {
-        const { rememberLocalDict } = await import('../../localDict')
-        await rememberLocalDict(word, out)
-      } catch {
-        /* ignore */
+    if (typeof data === 'string') out = data.trim()
+    else if (data && typeof data === 'object') {
+      const result = data as Record<string, unknown>
+      if (typeof result.translation === 'string') out = result.translation.trim()
+      else if (Array.isArray(result.explanations)) {
+        const lines = result.explanations.map((entry: unknown) => {
+          if (!entry || typeof entry !== 'object') return null
+          const explanation = entry as Record<string, unknown>
+          if (!Array.isArray(explanation.explains) ||
+            !explanation.explains.every((item: unknown) => typeof item === 'string')) return null
+          const meaning = (explanation.explains as string[]).map((item) => item.trim()).filter(Boolean).join('; ')
+          if (!meaning) return ''
+          const trait = typeof explanation.trait === 'string' ? explanation.trait.trim() : ''
+          return trait ? `${trait} ${meaning}` : meaning
+        })
+        if (lines.every((line) => line !== null)) out = lines.filter(Boolean).join('\n')
       }
+    }
+
+    if (!out) {
+      throw new TranslateError('invalid_response', 'ECDICT 返回格式异常或释义为空', { engine: 'ecdict' })
+    }
+    try {
+      const { rememberLocalDict } = await import('../../localDict')
+      await rememberLocalDict(word, out)
+    } catch {
+      /* ignore cache persistence failure */
     }
     return out
   },

@@ -1,4 +1,5 @@
 import { fetchWithTimeout as fetch } from '../utils/fetchWithTimeout'
+import { readTranslationResponse } from '../utils/response'
 import type { TranslateProvider } from '../types'
 import { simpleMd5 } from '../utils/md5'
 
@@ -18,7 +19,7 @@ export const baiduField: TranslateProvider = {
   configFields: [
     { key: 'appId', label: 'App ID', type: 'text', placeholder: '请输入百度翻译 App ID' },
     { key: 'secretKey', label: '密钥', type: 'password', placeholder: '请输入密钥' },
-    { key: 'field', label: '领域', type: 'text', placeholder: 'medicine / finance / mechanics 等' },
+    { key: 'field', label: '领域 (可选)', type: 'text', placeholder: 'medicine / finance / mechanics 等', required: false },
   ],
   langMap,
 
@@ -35,8 +36,14 @@ export const baiduField: TranslateProvider = {
     })
 
     const res = await fetch(`https://fanyi-api.baidu.com/api/trans/vip/fieldtranslate?${params}`, { method: 'GET' })
-    const data = await res.json() as any
-    if (data.error_code) throw new Error(`百度领域翻译错误: ${data.error_msg} (${data.error_code})`)
-    return data.trans_result?.map((r: any) => r.dst).join('\n') || ''
+    const data = await readTranslationResponse(res, 'baidu_field', '百度领域') as any
+    if (data?.error_code) throw new Error(`百度领域翻译错误: ${data.error_msg} (${data.error_code})`)
+    if (!Array.isArray(data?.trans_result) ||
+      !data.trans_result.every((result: any) => typeof result?.dst === 'string')) {
+      throw new Error('百度领域返回格式异常')
+    }
+    const result = data.trans_result.map((entry: any) => entry.dst).join('\n')
+    if (!result.trim()) throw new Error('百度领域翻译结果为空')
+    return result
   },
 }

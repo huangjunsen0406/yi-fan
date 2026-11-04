@@ -42,7 +42,7 @@ export const alibaba: TranslateProvider = {
       .replace(/\(/g, '%2528').replace(/\)/g, '%2529').replace(/\*/g, '%252A')
     const signature = await hmacSha1(config.accessKeySecret + '&', stringToSign)
 
-    const url = `http://mt.cn-hangzhou.aliyuncs.com/api/translate/web/general?${query}&Signature=${encodeURIComponent(signature)}`
+    const url = `https://mt.cn-hangzhou.aliyuncs.com/api/translate/web/general?${query}&Signature=${encodeURIComponent(signature)}`
     const res = await fetch(url, { method: 'GET' })
     const data = await res.json() as any
     if (data.Code === '200') return data.Data?.Translated?.trim() || ''

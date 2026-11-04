@@ -1,4 +1,5 @@
 import { fetchWithTimeout as fetch } from '../utils/fetchWithTimeout'
+import { readTranslationResponse } from '../utils/response'
 import type { TranslateProvider } from '../types'
 
 const langMap: Record<string, string> = {
@@ -22,7 +23,7 @@ export const bingDict: TranslateProvider = {
       `https://www.bing.com/api/v6/dictionarywords/search?q=${encodeURIComponent(word)}&appid=371E7B2AF0F9B84EC491D731DF90A55719C7D209&mkt=zh-cn&pname=bingdict`,
       { method: 'GET' }
     )
-    const data = await res.json() as any
+    const data = await readTranslationResponse(res, 'bing_dict', '必应词典') as any
     const groups = data.value?.[0]?.meaningGroups
     if (!groups || groups.length === 0) throw new Error(`必应词典未收录: ${word}`)
 

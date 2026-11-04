@@ -1,4 +1,5 @@
 import { fetchWithTimeout as fetch } from '../utils/fetchWithTimeout'
+import { readTranslationResponse } from '../utils/response'
 import type { TranslateProvider } from '../types'
 
 const langMap: Record<string, string> = {
@@ -37,7 +38,7 @@ export const yandex: TranslateProvider = {
       body: body.toString(),
     })
 
-    const data = await res.json() as any
+    const data = await readTranslationResponse(res, 'yandex', 'Yandex 翻译') as any
     if (data.text?.[0]) return data.text[0]
     throw new Error(`Yandex 翻译错误: ${JSON.stringify(data)}`)
   },

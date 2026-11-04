@@ -13,7 +13,7 @@ import {
 } from '../services/configSchema'
 
 // 默认主页显示的 4 个引擎（免费/无需额外配置即可用的）
-const DEFAULT_ENABLED = ['google', 'bing', 'transmart', 'deepl']
+const DEFAULT_ENABLED = ['google', 'bing', 'yandex', 'deepl']
 
 const SAVE_DEBOUNCE_MS = 250
 

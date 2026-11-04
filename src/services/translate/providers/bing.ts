@@ -1,5 +1,8 @@
 import { fetchWithTimeout as fetch } from '../utils/fetchWithTimeout'
 import type { TranslateProvider } from '../types'
+import { TranslateError } from '../../errors'
+import { escapeTranslationText, decodeTranslationText } from '../utils/htmlText'
+import { readTranslationResponse } from '../utils/response'
 
 const langMap: Record<string, string> = {
   '自动检测': '', '简体中文': 'zh-Hans', '繁体中文': 'zh-Hant', '英语': 'en',
@@ -9,50 +12,38 @@ const langMap: Record<string, string> = {
   '泰语': 'th', '越南语': 'vi', '印尼语': 'id',
 }
 
+// Replaces the retired /translate/auth + cognitive.microsofttranslator.com flow.
+const MICROSOFT_TRANSLATE_URL = 'https://edge.microsoft.com/translate/translatetext'
+
 export const bing: TranslateProvider = {
   name: 'bing',
   label: '必应翻译',
   icon: 'ph-microsoft-outlook-logo',
   needsConfig: false,
-  description: '使用微软必应翻译免费接口，无需 API Key。',
+  description: '使用微软 Edge 翻译接口，无需 API Key。',
   langMap,
 
   async translate(text, from, to) {
-    const fromLang = langMap[from] || ''
-    const toLang = langMap[to] || 'zh-Hans'
-
-    // Step 1: Get auth token
-    const tokenRes = await fetch('https://edge.microsoft.com/translate/auth', {
-      method: 'GET',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36 Edg/113.0.1774.42',
-      },
-    })
-    const token = await tokenRes.text()
-    if (!token) throw new Error('必应翻译获取 Token 失败')
-
-    // Step 2: Translate
+    if (!text.trim()) return ''
     const params = new URLSearchParams({
-      from: fromLang,
-      to: toLang,
-      'api-version': '3.0',
-      includeSentenceLength: 'true',
+      from: langMap[from] || '',
+      to: langMap[to] || 'zh-Hans',
+      isEnterpriseClient: 'false',
     })
-
-    const res = await fetch(`https://api-edge.cognitive.microsofttranslator.com/translate?${params}`, {
+    const res = await fetch(`${MICROSOFT_TRANSLATE_URL}?${params}`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/113.0.0.0 Safari/537.36 Edg/113.0.1774.42',
-      },
-      body: JSON.stringify([{ Text: text }]),
+      headers: { 'Content-Type': 'application/json' },
+      // Even this text-only endpoint interprets raw angle brackets as HTML.
+      body: JSON.stringify([escapeTranslationText(text)]),
     })
-
-    const data = await res.json() as any
-    if (Array.isArray(data) && data[0]?.translations?.[0]?.text) {
-      return data[0].translations[0].text.trim()
+    const data = await readTranslationResponse(res, 'bing', '必应翻译')
+    if (!Array.isArray(data) || data.length !== 1 || typeof data[0]?.translations?.[0]?.text !== 'string') {
+      throw new TranslateError('invalid_response', '必应翻译返回格式异常', { engine: 'bing' })
     }
-    throw new Error(`必应翻译错误: ${JSON.stringify(data)}`)
+    const result = decodeTranslationText(data[0].translations[0].text).trim()
+    if (!result) {
+      throw new TranslateError('empty_result', '必应翻译返回为空', { engine: 'bing' })
+    }
+    return result
   },
 }

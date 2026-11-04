@@ -1,4 +1,5 @@
 import { fetchWithTimeout as fetch } from '../utils/fetchWithTimeout'
+import { readTranslationResponse } from '../utils/response'
 import type { TranslateProvider } from '../types'
 
 const langMap: Record<string, string> = {
@@ -23,7 +24,7 @@ export const deepl: TranslateProvider = {
   needsConfig: false,
   description: '使用 DeepL 免费网页接口翻译，无需 API Key。如需使用官方 API，请配置 Auth Key。',
   configFields: [
-    { key: 'authKey', label: 'Auth Key (可选)', type: 'password', placeholder: '留空则使用免费接口' },
+    { key: 'authKey', label: 'Auth Key (可选)', type: 'password', placeholder: '留空则使用免费接口', required: false },
   ],
   langMap,
 
@@ -65,10 +66,9 @@ async function translateByFree(text: string, from: string, to: string, lm: Recor
     headers: { 'Content-Type': 'application/json' },
     body: bodyStr,
   })
-  const result = await res.json() as any
-  if (result?.result?.texts?.[0]?.text) {
-    return result.result.texts[0].text.trim()
-  }
+  const result = await readTranslationResponse(res, 'deepl', 'DeepL') as any
+  const translation = result?.result?.texts?.[0]?.text
+  if (typeof translation === 'string' && translation.trim()) return translation.trim()
   throw new Error(`DeepL 翻译错误: ${JSON.stringify(result)}`)
 }
 
@@ -78,17 +78,17 @@ async function translateByKey(text: string, from: string, to: string, key: strin
   const fromLang = lm[from]
   if (fromLang && fromLang !== 'auto') body.source_lang = fromLang
 
-  let url: string
-  if (key.endsWith(':fx')) url = 'https://api-free.deepl.com/v2/translate'
-  else if (key.endsWith(':dp')) url = 'https://api.deepl-pro.com/v2/translate'
-  else url = 'https://api.deepl.com/v2/translate'
+  const url = key.endsWith(':fx')
+    ? 'https://api-free.deepl.com/v2/translate'
+    : 'https://api.deepl.com/v2/translate'
 
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `DeepL-Auth-Key ${key}` },
     body: JSON.stringify(body),
   })
-  const result = await res.json() as any
-  if (result.translations?.[0]?.text) return result.translations[0].text.trim()
+  const result = await readTranslationResponse(res, 'deepl', 'DeepL API') as any
+  const translation = result?.translations?.[0]?.text
+  if (typeof translation === 'string' && translation.trim()) return translation.trim()
   throw new Error(`DeepL API 错误: ${JSON.stringify(result)}`)
 }

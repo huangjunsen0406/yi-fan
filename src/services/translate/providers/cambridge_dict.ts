@@ -1,4 +1,5 @@
 import { fetchWithTimeout as fetch } from '../utils/fetchWithTimeout'
+import { assertTranslationResponseOk } from '../utils/response'
 import type { TranslateProvider } from '../types'
 
 const langMap: Record<string, string> = {
@@ -19,7 +20,6 @@ export const cambridgeDict: TranslateProvider = {
 
   async translate(text, _from, to) {
     const word = text.trim()
-    if (word.split(' ').length > 1) return '' // only single words
     const toLang = langMap[to] || 'chinese-simplified'
 
     const res = await fetch(
@@ -29,6 +29,7 @@ export const cambridgeDict: TranslateProvider = {
         headers: { 'Content-Type': 'text/html;charset=UTF-8' },
       }
     )
+    assertTranslationResponseOk(res, 'cambridge_dict', '剑桥词典')
     const html = await res.text()
 
     // Simple extraction of definitions from HTML

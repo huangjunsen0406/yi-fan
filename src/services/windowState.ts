@@ -33,7 +33,7 @@ export async function loadWindowState(): Promise<WindowState | null> {
 export async function saveWindowState(partial?: Partial<WindowState>): Promise<void> {
   try {
     const win = getCurrentWindow()
-    const size = await win.outerSize()
+    const size = await win.innerSize()
     const pos = await win.outerPosition()
     const scale = await win.scaleFactor()
     const alwaysOnTop = await win.isAlwaysOnTop()

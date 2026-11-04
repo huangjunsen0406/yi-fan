@@ -28,9 +28,27 @@ describe('TranslateError', () => {
     expect(toTranslateError(e).code).toBe('auth')
   })
 
+  it.each([
+    ['必应翻译获取 Token 失败', 'provider'],
+    ['HTTP 401 invalid token', 'auth'],
+    ['HTTP 错误: 429 invalid API key token', 'rate_limit'],
+    ['HTTP 503 invalid API key', 'server'],
+    ['请先配置 Claude API Key', 'not_configured'],
+    ['请先配置腾讯云 OCR 的 SecretId 和 SecretKey', 'not_configured'],
+    ['请先在设置中配置 OCR', 'not_configured'],
+  ] as const)('classifies %s without treating arbitrary credentials as missing config', (message, code) => {
+    expect(inferErrorCode(message)).toBe(code)
+  })
+
+  it('does not send Microsoft users to Key settings after a token failure', () => {
+    const error = toTranslateError(new Error('必应翻译获取 Token 失败'), 'provider', 'bing')
+    expect(friendlyError(error)).not.toMatch(/Key|配置/)
+  })
+
   it('friendlyError maps structured codes', () => {
     expect(friendlyError(new TranslateError('offline', '当前离线'))).toMatch(/离线/)
     expect(friendlyError(new TranslateError('timeout', 'x'))).toMatch(/超时/)
     expect(friendlyError(new TranslateError('auth', 'x'))).toMatch(/鉴权/)
+    expect(friendlyError(new Error('HTTP 429 invalid API key token'))).toMatch(/频繁|额度/)
   })
 })

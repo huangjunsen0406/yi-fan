@@ -41,7 +41,13 @@ export function isTranslateError(err: unknown): err is TranslateError {
 /** Infer structured code from a raw error message */
 export function inferErrorCode(msg: string): TranslateErrorCode {
   const lower = msg.toLowerCase()
-  if (/未配置|api key|auth key|token|请先在设置/i.test(msg)) return 'not_configured'
+  // Do not let words in an error body override an explicit HTTP status.
+  const status = msg.match(/\bHTTP\s*(?:错误\s*:\s*)?(\d{3})\b/i)?.[1]
+  if (status === '429') return 'rate_limit'
+  if (status === '401' || status === '403') return 'auth'
+  if (status === '404') return 'not_found'
+  if (status && Number(status) >= 500) return 'server'
+  if (/未配置|请先(?:在设置中)?配置|请先在设置|missing.*(api key|credential)/i.test(msg)) return 'not_configured'
   if (/离线|offline|无网/i.test(msg)) return 'offline'
   if (/超时|timeout|abort/i.test(lower) || msg.includes('请求超时')) return 'timeout'
   if (/network|fetch failed|failed to fetch|econnreset|enotfound/i.test(lower) || /网络|连接/.test(msg))
@@ -72,6 +78,8 @@ export function toTranslateError(
   return new TranslateError(inferErrorCode(msg) || fallbackCode, msg, { engine, cause: err })
 }
 
+const KEYLESS_ENGINES = new Set(['google', 'bing', 'bing_dict', 'cambridge_dict', 'ecdict', 'yandex', 'lingva'])
+
 /**
  * Map raw engine / network errors to short Chinese messages for UI.
  */
@@ -89,9 +97,13 @@ export function friendlyError(err: unknown, fallback = '翻译失败'): string {
       case 'network':
         return '网络异常，请检查网络连接'
       case 'auth':
-        return '鉴权失败，请检查 API Key 是否正确'
+        return err.engine && KEYLESS_ENGINES.has(err.engine)
+          ? '网页翻译接口鉴权失败，请稍后重试或切换引擎'
+          : '鉴权失败，请检查 API Key 是否正确'
       case 'rate_limit':
-        return '请求过于频繁或额度不足，请稍后再试'
+        return err.engine && KEYLESS_ENGINES.has(err.engine)
+          ? '网页翻译接口请求受限，请稍后重试或切换引擎'
+          : '请求过于频繁或额度不足，请稍后再试'
       case 'not_found':
         return err.message.length < 80 ? err.message : '未找到对应词条'
       case 'server':
@@ -109,29 +121,9 @@ export function friendlyError(err: unknown, fallback = '翻译失败'): string {
 
   const raw = err instanceof Error ? err.message : String(err ?? '')
   const msg = raw.trim() || fallback
-  const lower = msg.toLowerCase()
-
-  if (/未配置|api key|auth key|token|请先在设置/i.test(msg)) {
-    return msg.includes('设置') ? msg : '请先在设置中配置该引擎的 API Key'
-  }
-  if (/超时|timeout|abort/i.test(lower) || msg.includes('请求超时')) {
-    return '请求超时，请检查网络后重试'
-  }
-  if (/network|fetch failed|failed to fetch|econnreset|enotfound/i.test(lower) || /网络|连接/.test(msg)) {
-    return '网络异常，请检查网络连接'
-  }
-  if (/401|unauthorized|forbidden|403|invalid.*(key|token|sign)/i.test(lower)) {
-    return '鉴权失败，请检查 API Key 是否正确'
-  }
-  if (/429|rate limit|quota|额度|限流|too many/i.test(lower)) {
-    return '请求过于频繁或额度不足，请稍后再试'
-  }
-  if (/404|not found/i.test(lower)) {
-    return '接口地址无效或不存在'
-  }
-  if (/500|502|503|504|server error|internal/i.test(lower)) {
-    return '翻译服务暂时不可用，请稍后重试'
-  }
+  const code = inferErrorCode(msg)
+  if (code === 'not_found') return '接口地址无效或不存在'
+  if (code !== 'provider') return friendlyError(new TranslateError(code, msg), fallback)
   if (/http\s*错误:\s*(\d+)/i.test(msg)) {
     const code = msg.match(/http\s*错误:\s*(\d+)/i)?.[1]
     return `服务返回错误${code ? ` (${code})` : ''}，请稍后重试`
